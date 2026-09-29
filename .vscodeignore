@@ -1,0 +1,10 @@
+**
+!dist/extension.js
+!package.json
+!package.nls*.json
+!l10n/**
+!README*.md
+!LICENSE
+!THIRD-PARTY-NOTICES.md
+!CHANGELOG.md
+!icon.png

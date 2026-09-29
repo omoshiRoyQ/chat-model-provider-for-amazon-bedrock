@@ -1,0 +1,22 @@
+{
+    "extension.displayName": "Chat Model Provider for Amazon Bedrock",
+    "extension.description": "Use Amazon Bedrock models in VS Code Chat via your AWS profile (SSO supported).",
+    "provider.displayName": "Chat Model Provider for Amazon Bedrock",
+    "command.category": "Chat Model Provider for Amazon Bedrock",
+    "command.showLogs.title": "Show Logs",
+    "command.signIn.title": "Sign In with AWS SSO",
+    "command.showUsage.title": "Show Usage",
+    "command.pickThinkingEffort.title": "Set Thinking Effort",
+    "config.title": "Chat Model Provider for Amazon Bedrock",
+    "config.profile.description": "AWS profile name in `~/.aws/config` (SSO supported). Required.",
+    "config.region.description": "AWS region, for example `us-west-2`. Leave empty to use the region set in the profile.",
+    "config.modelFilter.description": "Which models to list in the Chat model picker.",
+    "config.modelFilter.claudeAndGpt": "Only Claude and GPT",
+    "config.modelFilter.all": "All models",
+    "config.inferenceScope.description": "Which cross-Region inference profile to use. Requests are processed only within the chosen scope.",
+    "config.inferenceScope.geo": "Geographic profile (for example `us.` or `eu.`, based on your region). Data stays within that geography. Models that only offer a global profile are hidden.",
+    "config.inferenceScope.global": "Global profile. Requests may be processed in any AWS Region worldwide. Falls back to the geographic profile when a model has no global profile.",
+    "config.usageResetDay.description": "Day of the month (1–31) when the token usage totals reset. If a month has fewer days, the reset happens on its last day.",
+    "config.usageResetHour.description": "Hour (UTC, 0–23) when the token usage totals reset.",
+    "config.customPricing.description": "Your own prices in USD per 1M tokens, keyed by model ID. These override the price table, and are the only way to estimate costs for models that are not in the public AWS price list (for example GPT). Example: `{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`"
+}

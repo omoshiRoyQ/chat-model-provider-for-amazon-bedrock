@@ -1,0 +1,22 @@
+{
+    "extension.displayName": "Chat Model Provider for Amazon Bedrock",
+    "extension.description": "AWS プロファイル（SSO 対応）を使用して、VS Code Chat で Amazon Bedrock のモデルを利用できます。",
+    "provider.displayName": "Chat Model Provider for Amazon Bedrock",
+    "command.category": "Chat Model Provider for Amazon Bedrock",
+    "command.showLogs.title": "ログを表示",
+    "command.signIn.title": "AWS SSO でサインイン",
+    "command.showUsage.title": "使用量を表示",
+    "command.pickThinkingEffort.title": "thinking effort を設定",
+    "config.title": "Chat Model Provider for Amazon Bedrock",
+    "config.profile.description": "`~/.aws/config` の AWS プロファイル名（SSO 対応）。必須です。",
+    "config.region.description": "AWS リージョン（例：`us-west-2`）。空欄の場合はプロファイルに設定されたリージョンを使用します。",
+    "config.modelFilter.description": "Chat のモデル選択に表示するモデル。",
+    "config.modelFilter.claudeAndGpt": "Claude と GPT のみ",
+    "config.modelFilter.all": "すべてのモデル",
+    "config.inferenceScope.description": "使用するクロスリージョン推論プロファイルの種類。リクエストは選択した範囲内でのみ処理されます。",
+    "config.inferenceScope.geo": "地理的プロファイル（リージョンに応じて `us.`、`eu.` など）。データはその地域から出ません。グローバルプロファイルしかないモデルは表示されません。",
+    "config.inferenceScope.global": "グローバルプロファイル。リクエストは世界中の任意の AWS リージョンで処理される可能性があります。グローバルプロファイルがないモデルは地理的プロファイルを使用します。",
+    "config.usageResetDay.description": "トークン使用量の累計を毎月リセットする日（1～31）。その月にその日がない場合は、月末にリセットします。",
+    "config.usageResetHour.description": "トークン使用量の累計をリセットする時刻（UTC、0～23 時）。",
+    "config.customPricing.description": "独自の単価（100 万トークンあたりの米ドル）。モデル ID をキーにします。価格表より優先され、AWS の公開価格表にないモデル（GPT など）の費用を見積もる唯一の方法です。例：`{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`"
+}

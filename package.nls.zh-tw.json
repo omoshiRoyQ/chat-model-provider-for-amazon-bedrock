@@ -1,0 +1,22 @@
+{
+    "extension.displayName": "Chat Model Provider for Amazon Bedrock",
+    "extension.description": "透過 AWS profile（支援 SSO）在 VS Code Chat 使用 Amazon Bedrock 模型。",
+    "provider.displayName": "Chat Model Provider for Amazon Bedrock",
+    "command.category": "Chat Model Provider for Amazon Bedrock",
+    "command.showLogs.title": "顯示紀錄",
+    "command.signIn.title": "以 AWS SSO 登入",
+    "command.showUsage.title": "顯示使用量",
+    "command.pickThinkingEffort.title": "設定 thinking effort",
+    "config.title": "Chat Model Provider for Amazon Bedrock",
+    "config.profile.description": "`~/.aws/config` 中的 AWS profile 名稱（支援 SSO）。必填。",
+    "config.region.description": "AWS region，例如 `us-west-2`。留空時使用 profile 中設定的 region。",
+    "config.modelFilter.description": "Chat 模型選單要列出哪些模型。",
+    "config.modelFilter.claudeAndGpt": "只列出 Claude 與 GPT",
+    "config.modelFilter.all": "所有模型",
+    "config.inferenceScope.description": "要使用哪一種跨區域 inference profile。請求只會在選定的範圍內處理。",
+    "config.inferenceScope.geo": "地理區 profile（依 region 而定，例如 `us.`、`eu.`）。資料不會離開該地理區。只提供 global profile 的模型不會列出。",
+    "config.inferenceScope.global": "全球 profile。請求可能在全世界任何 AWS 區域處理。模型沒有 global profile 時，改用地理區 profile。",
+    "config.usageResetDay.description": "累計 token 每月重設的日期（1～31）。當月沒有這一天時，改在當月最後一天重設。",
+    "config.usageResetHour.description": "累計 token 重設的時間（UTC，0～23 點）。",
+    "config.customPricing.description": "自訂單價，單位是每 1M token 的美元，以 model ID 為 key。自訂單價優先於價格表；AWS 公開價格表沒有的模型（例如 GPT）只能用這個設定估算費用。範例：`{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`"
+}

@@ -1,0 +1,164 @@
+{
+  "name": "chat-model-provider-for-amazon-bedrock",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
+  "version": "1.0.0",
+  "publisher": "omoshiRoyQ",
+  "icon": "icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock/issues"
+  },
+  "homepage": "https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock#readme",
+  "private": true,
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "amazon-bedrock",
+    "aws",
+    "language-models",
+    "chat",
+    "generative-ai"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "amazon-bedrock-provider",
+        "displayName": "%provider.displayName%"
+      }
+    ],
+    "commands": [
+      {
+        "command": "amazonBedrockProvider.showLogs",
+        "title": "%command.showLogs.title%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "amazonBedrockProvider.signIn",
+        "title": "%command.signIn.title%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "amazonBedrockProvider.showUsage",
+        "title": "%command.showUsage.title%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "amazonBedrockProvider.pickThinkingEffort",
+        "title": "%command.pickThinkingEffort.title%",
+        "category": "%command.category%"
+      }
+    ],
+    "configuration": {
+      "title": "%config.title%",
+      "properties": {
+        "amazonBedrockProvider.profile": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.profile.description%"
+        },
+        "amazonBedrockProvider.region": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.region.description%"
+        },
+        "amazonBedrockProvider.modelFilter": {
+          "type": "string",
+          "enum": [
+            "claudeAndGpt",
+            "all"
+          ],
+          "enumItemLabels": [
+            "%config.modelFilter.claudeAndGpt%",
+            "%config.modelFilter.all%"
+          ],
+          "default": "claudeAndGpt",
+          "markdownDescription": "%config.modelFilter.description%"
+        },
+        "amazonBedrockProvider.inferenceScope": {
+          "type": "string",
+          "enum": [
+            "geo",
+            "global"
+          ],
+          "enumDescriptions": [
+            "%config.inferenceScope.geo%",
+            "%config.inferenceScope.global%"
+          ],
+          "default": "geo",
+          "markdownDescription": "%config.inferenceScope.description%"
+        },
+        "amazonBedrockProvider.usageResetDay": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31,
+          "default": 1,
+          "markdownDescription": "%config.usageResetDay.description%"
+        },
+        "amazonBedrockProvider.usageResetHour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23,
+          "default": 0,
+          "markdownDescription": "%config.usageResetHour.description%"
+        },
+        "amazonBedrockProvider.customPricing": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "number",
+                "minimum": 0
+              },
+              "output": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "input",
+              "output"
+            ]
+          },
+          "markdownDescription": "%config.customPricing.description%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "pnpm run check-types && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check-types": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "check-licenses": "node scripts/check-third-party-notices.mjs",
+    "vsix": "pnpm run check-licenses && vsce package --no-dependencies",
+    "package": "pnpm run check-types && pnpm run check-licenses && node esbuild.mjs --production",
+    "vscode:prepublish": "pnpm run package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "@types/vscode": "~1.106.1",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "5.0.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.1140.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1139.0",
+    "@aws-sdk/credential-providers": "^3.1139.0"
+  }
+}
