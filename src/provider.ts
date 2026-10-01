@@ -1,14 +1,16 @@
 import * as vscode from 'vscode';
-import { buildToolConfig, toConverseMessages } from './convert';
-import { describeError, describeErrorForLog, isCredentialError } from './errors';
+import { buildToolConfig, toConverseMessages, toConverseSystem } from './convert';
+import { describeError, describeErrorForLog, isCredentialError, isSystemMessageUnsupported } from './errors';
 import { fetchModelSources } from './modelList';
+import type { ModelCardStore } from './modelCardStore';
 import { resolveModels, type ResolvedModel } from './models';
 import { NativeConverseClient } from './native';
 import { CONFIG_SECTION, readSettings, type BedrockSettings } from './settings';
 import type { SsoSignIn } from './signIn';
-import type { TokenUsage } from './native';
+import type { StreamPart, TokenUsage } from './native';
 import type { SignInStatusBar } from './statusBar';
 import { buildThinkingRequest, type ThinkingEffort } from './thinking';
+import { ThinkingTagFilter } from './thinkingTags';
 
 /** Interface between the provider and other extension components (token usage tracking and thinking settings). */
 export interface ProviderHooks {
@@ -43,6 +45,9 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     /** Region used by the most recent model-list query (from settings or resolved by the SDK from the profile). */
     private resolvedRegion = '';
 
+    /** Models that rejected Converse system messages in this session; their system prompt is sent as user text. */
+    private readonly noSystemModels = new Set<string>();
+
     /** Notifies VS Code to query the model list again when settings change. */
     readonly onDidChangeLanguageModelChatInformation = this.changeEmitter.event;
 
@@ -56,6 +61,7 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         private readonly signInBar: SignInStatusBar,
         private readonly sso: SsoSignIn,
         private readonly hooks: ProviderHooks,
+        private readonly modelCards: ModelCardStore,
     ) {
         this.native = new NativeConverseClient(log);
         this.configListener = vscode.workspace.onDidChangeConfiguration((e) => {
@@ -200,12 +206,24 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             const sources = await fetchModelSources(settings.profile, settings.region);
             this.resolvedRegion = sources.region;
             this.log.info(`Resolved region=${sources.region} (${settings.region ? 'from settings' : 'from profile'})`);
-            const { models, notes } = resolveModels(sources.profiles, sources.foundations, settings.inferenceScope, settings.modelFilter === 'claudeAndGpt');
+            if (sources.foundationsDenied) {
+                this.log.warn(`AWS profile "${settings.profile}" lacks bedrock:ListFoundationModels; listing inference profiles only and assuming image input is supported`);
+            }
+            const { models, notes, unknownIds, usesModelCards } = resolveModels(
+                sources.profiles,
+                sources.foundations,
+                settings.inferenceScope,
+                settings.modelFilter === 'claudeAndGpt',
+                this.modelCards.limits(),
+            );
             for (const note of notes) {
                 this.log.info(note);
             }
-            this.log.info(`Reported ${models.length} models (inference profiles=${sources.profiles.length}, foundation models=${sources.foundations.length})`);
+            this.log.info(`Reported ${models.length} models (inference profiles=${sources.profiles.length}, foundation models=${sources.foundations.length}, imageInput=${models.filter((m) => m.imageInput).length})`);
             this.modelsById = new Map(models.map((m) => [m.invokeId, m]));
+            if ((unknownIds.length > 0 || usesModelCards) && this.modelCards.needsRefresh(unknownIds)) {
+                this.refreshModelCards(unknownIds);
+            }
             return models;
         })();
         this.listCache = { key, promise };
@@ -218,6 +236,23 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         return promise;
     }
 
+    /** Runs in the background so the model list is not delayed; reloads the list when new card data arrives. */
+    private refreshModelCards(unknownIds: readonly string[]): void {
+        this.log.info(`Fetching AWS model cards (models without catalog or card data: ${unknownIds.join(', ') || 'none'})`);
+        this.modelCards.refresh(unknownIds).then(
+            ({ fetched, failed }) => {
+                this.log.info(`Model cards updated: fetched=${fetched}${failed.length > 0 ? `, failed=${failed.join(', ')}` : ''}`);
+                if (fetched > 0) {
+                    this.listCache = undefined;
+                    this.changeEmitter.fire();
+                }
+            },
+            (error: unknown) => {
+                this.log.warn(`Could not fetch AWS model cards: ${error instanceof Error ? error.message : String(error)}; conservative limits remain in use`);
+            },
+        );
+    }
+
     async provideLanguageModelChatResponse(
         model: vscode.LanguageModelChatInformation,
         messages: readonly vscode.LanguageModelChatRequestMessage[],
@@ -227,7 +262,10 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     ): Promise<void> {
         const settings = readSettings();
         const resolved = this.modelsById.get(model.id);
-        const converseMessages = toConverseMessages(messages, this.log, resolved?.imageInput ?? model.capabilities.imageInput ?? false);
+        const imageInput = resolved?.imageInput ?? model.capabilities.imageInput ?? false;
+        const systemAsUser = this.noSystemModels.has(model.id);
+        const system = systemAsUser ? undefined : toConverseSystem(messages);
+        const converseMessages = toConverseMessages(messages, this.log, imageInput, systemAsUser);
         const toolConfig = buildToolConfig(options.tools, options.toolMode, converseMessages);
         const effort = this.hooks.thinkingEffort(model.id);
         const thinking = buildThinkingRequest(
@@ -242,30 +280,57 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         if (thinking.note) {
             this.log.info(`model=${model.id} thinking: ${thinking.note}`);
         }
+        const images = converseMessages.reduce((n, m) => n + (m.content?.filter((b) => b.image).length ?? 0), 0);
+        // Raw VS Code roles (1=user, 2=assistant; other values are not in the stable API) before merging.
+        const roles = [...messages.reduce((m, x) => m.set(x.role, (m.get(x.role) ?? 0) + 1), new Map<number, number>())].map(([r, n]) => `${r}:${n}`).join(',');
         this.log.info(
-            `Sending request: model=${model.id}, path=Native, messages=${converseMessages.length}, tools=${options.tools?.length ?? 0}, toolConfig=${toolConfig ? toolConfig.tools?.length : 'none'}, thinkingEffort=${effort}, fields=${thinking.fields ? JSON.stringify(thinking.fields) : 'none'}`,
+            `Sending request: model=${model.id}, path=Native, messages=${converseMessages.length}, roles=${roles}, system=${system ? 'field' : systemAsUser ? 'as-user' : 'none'}, images=${images}, tools=${options.tools?.length ?? 0}, toolConfig=${toolConfig ? toolConfig.tools?.length : 'none'}, thinkingEffort=${effort}, fields=${thinking.fields ? JSON.stringify(thinking.fields) : 'none'}`,
         );
+        const request = {
+            profile: settings.profile,
+            region: settings.region,
+            modelId: model.id,
+            messages: converseMessages,
+            system,
+            toolConfig,
+            additionalFields: thinking.fields,
+            maxTokens: thinking.maxTokens,
+        };
+        const tagFilter = model.id.includes('amazon.nova-') ? new ThinkingTagFilter() : undefined;
+        const reportText = (text: string) => {
+            if (text) {
+                progress.report(new vscode.LanguageModelTextPart(text));
+            }
+        };
+        const onPart = (part: StreamPart) => {
+            if (part.kind === 'text') {
+                reportText(tagFilter ? tagFilter.push(part.text) : part.text);
+            } else {
+                reportText(tagFilter?.flush() ?? '');
+                this.log.info(`model=${model.id} called tool: ${part.name} (callId=${part.callId})`);
+                progress.report(new vscode.LanguageModelToolCallPart(part.callId, part.name, part.input));
+            }
+        };
         try {
-            const usage = await this.native.stream(
-                {
-                    profile: settings.profile,
-                    region: settings.region,
-                    modelId: model.id,
-                    messages: converseMessages,
-                    toolConfig,
-                    additionalFields: thinking.fields,
-                    maxTokens: thinking.maxTokens,
-                },
-                (part) => {
-                    if (part.kind === 'text') {
-                        progress.report(new vscode.LanguageModelTextPart(part.text));
-                    } else {
-                        this.log.info(`model=${model.id} called tool: ${part.name} (callId=${part.callId})`);
-                        progress.report(new vscode.LanguageModelToolCallPart(part.callId, part.name, part.input));
-                    }
-                },
-                token,
-            );
+            let usage;
+            try {
+                usage = await this.native.stream(request, onPart, token);
+            } catch (error) {
+                if (!system || !isSystemMessageUnsupported(error)) {
+                    throw error;
+                }
+                // Bedrock validates before generating, so nothing was streamed or billed; resend with the system prompt as user text.
+                this.noSystemModels.add(model.id);
+                this.log.warn(`model=${model.id} does not support system messages; resending with the system prompt as user text`);
+                const merged = toConverseMessages(messages, this.log, imageInput, true);
+                usage = await this.native.stream({ ...request, messages: merged, system: undefined }, onPart, token);
+            }
+            if (tagFilter) {
+                reportText(tagFilter.flush());
+                if (tagFilter.removed > 0) {
+                    this.log.info(`model=${model.id} removed ${tagFilter.removed} characters of <thinking> text`);
+                }
+            }
             this.clearCredentialProblem();
             if (usage) {
                 this.hooks.onUsage(settings.profile, resolved, model.id, model.name, usage);

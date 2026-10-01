@@ -2,6 +2,7 @@ import {
     BedrockRuntimeClient,
     ConverseStreamCommand,
     type Message,
+    type SystemContentBlock,
     type ToolConfiguration,
 } from '@aws-sdk/client-bedrock-runtime';
 import { fromIni } from '@aws-sdk/credential-providers';
@@ -62,6 +63,7 @@ export class NativeConverseClient {
             region: string;
             modelId: string;
             messages: Message[];
+            system?: SystemContentBlock[];
             toolConfig: ToolConfiguration | undefined;
             /** Model-specific parameters such as thinking, passed through in additionalModelRequestFields. */
             additionalFields?: Record<string, Document>;
@@ -80,6 +82,7 @@ export class NativeConverseClient {
                 new ConverseStreamCommand({
                     modelId: params.modelId,
                     messages: params.messages,
+                    system: params.system,
                     toolConfig: params.toolConfig,
                     additionalModelRequestFields: params.additionalFields,
                     inferenceConfig: params.maxTokens !== undefined ? { maxTokens: params.maxTokens } : undefined,

@@ -36,13 +36,30 @@
 
 ## AWS 権限
 
-モデル一覧の取得とストリーミング chat の利用には、次の権限が必要です。
+| 権限 | 用途 | 必須 |
+| --- | --- | --- |
+| `bedrock:ListInferenceProfiles` | 呼び出せるモデルの一覧を取得 | 必須 |
+| `bedrock:InvokeModelWithResponseStream` | モデルとストリーミングで会話 | 必須 |
+| `bedrock:ListFoundationModels` | 画像対応の有無など、モデルの機能を取得 | 推奨 |
 
-- `bedrock:ListInferenceProfiles`
-- `bedrock:ListFoundationModels`
-- `bedrock:InvokeModelWithResponseStream`
+`bedrock:ListFoundationModels` がなくても会話はできますが、次の違いがあります。
+
+- **画像**：モデルが画像に対応しているか判断できないため、すべてのモデルで画像を添付できます。対応していないモデルでは、送信後にエラーが表示されます。Agent の tool が返す画像（スクリーンショットなど）も同様です。
+- **モデル一覧**：ID が `us.` や `global.` などのプレフィックスで始まるモデルのみ表示されます。モデル ID で直接呼び出すしかないモデル（例：`openai.gpt-oss-20b-1:0`）は表示されません。
+- **Model Filter ですべてのモデルを表示する場合**：画像生成や embedding など、会話できないモデルも選択肢に表示されます。
+
+既定の Claude と GPT のみの表示では、主な違いは画像の扱いだけです。
 
 一部のサードパーティ Marketplace モデルでは、`aws-marketplace:ViewSubscriptions` と `aws-marketplace:Subscribe` に加え、そのモデルのサブスクリプションが必要です。resource ARN と条件は、利用するモデル、リージョン、組織のポリシーに合わせて AWS 管理者が設定してください。
+
+モデル一覧の権限を確認するには、ご自身のプロファイルとリージョンを指定して次のコマンドを実行します。これらのコマンドはモデルを呼び出さず、料金も発生しません。
+
+```powershell
+aws bedrock list-inference-profiles --profile <profile> --region <region>
+aws bedrock list-foundation-models --profile <profile> --region <region>
+```
+
+1 つ目のコマンドが失敗する場合、モデル一覧を読み込めません。2 つ目のコマンドだけが失敗する場合は、上記の違いはありますが会話はできます。これらのコマンドでは `bedrock:InvokeModelWithResponseStream` を確認できません。この権限を確認するには、Chat でメッセージを送信してください。
 
 ## 設定
 
@@ -74,8 +91,9 @@ Bedrock が返す入力／出力 token 数を AWS プロファイル、モデル
 
 1. AWS プロファイルを通じた、選択したリージョンの Amazon Bedrock への接続（モデル一覧の読み込みとストリーミング Chat）。
 2. **価格を更新** を選択したときの、AWS 公開価格ファイルへの HTTPS GET リクエスト。リクエストにアカウント情報や AWS 認証情報は含まれません。
+3. モデル一覧に内蔵リストにないモデルが含まれる場合の、AWS 公開ドキュメント（docs.aws.amazon.com）のモデルカードページへの HTTPS GET リクエスト。コンテキストウィンドウと最大出力 token 数を読み取ります。一度調べたモデルは、キャッシュが 7 日を超えるまで再取得しません。リクエストにアカウント情報や AWS 認証情報は含まれません。
 
-サインインボタンを選択すると、extension はローカルで AWS CLI の `aws sso login` を起動します。バックグラウンドで自動的にサインインすることはありません。
+サインインボタンを選択すると、extension はローカルで AWS CLI の `aws sso login` を起動し、AWS CLI がブラウザーを開いてサインインを完了させます（アカウントの選択やアクセスの承認など）。バックグラウンドで自動的にサインインすることはありません。
 
 VS Code 自体の telemetry は VS Code の `telemetry.telemetryLevel` 設定に従い、この extension では制御しません。
 
@@ -93,7 +111,7 @@ VS Code 自体の telemetry は VS Code の `telemetry.telemetryLevel` 設定に
 
 ### ローカル保存
 
-- VS Code `globalState` に保存するのは、使用量（プロファイル名、model ID、token 数、リクエスト数）、モデルごとの thinking 設定、ダウンロードした価格表のみです。これらはほかのデバイスに同期されません。使用量は使用量パネルからリセットでき、thinking 設定は **thinking effort を設定** コマンドで Default に戻せます。ダウンロードした価格表は、**価格を更新** を選択すると新しい価格表に置き換えられます。
+- VS Code `globalState` に保存するのは、使用量（プロファイル名、model ID、token 数、リクエスト数）、モデルごとの thinking 設定、ダウンロードした価格表、AWS モデルカードから読み取った token 上限のみです。これらはほかのデバイスに同期されません。使用量は使用量パネルからリセットでき、thinking 設定は **thinking effort を設定** コマンドで Default に戻せます。ダウンロードした価格表は、**価格を更新** を選択すると新しい価格表に置き換えられます。
 - Chat の内容をローカル保存やログに書き込むことはありません。
 
 ### ログ
@@ -108,7 +126,7 @@ VS Code 自体の telemetry は VS Code の `telemetry.telemetryLevel` 設定に
 ## トラブルシューティング
 
 - **AWS リージョンが設定されていません**：VS Code 設定の `amazonBedrockProvider.region`、または AWS プロファイルにリージョンを設定してください。
-- **モデル一覧の権限が不足している**：管理者に `bedrock:ListInferenceProfiles` と `bedrock:ListFoundationModels` の付与を依頼してください。
+- **モデル一覧の権限が不足している**：管理者に `bedrock:ListInferenceProfiles` の付与を依頼してください。
 - **モデル呼び出しが拒否される**：プロファイルに `bedrock:InvokeModelWithResponseStream` があり、モデルが選択したリージョンと推論範囲で利用可能か確認してください。Marketplace モデルではサブスクリプション権限も必要な場合があります。
 - **SSO のサインイン期限が切れた**：Bedrock のサインインボタンを選択するか、`aws sso login --profile <profile>` を実行してから、失敗した Chat リクエストを再送してください。
 - **詳細な診断情報**：コマンドパレットから **ログを表示** を実行してください。ログを共有する前に個人情報と検証情報を伏せてください。
@@ -116,5 +134,7 @@ VS Code 自体の telemetry は VS Code の `telemetry.telemetryLevel` 設定に
 ## ライセンス
 
 本プロジェクトは MIT ライセンスです。詳しくは [LICENSE](LICENSE) を参照してください。同梱する依存パッケージのライセンスと著作権表示は [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
+
+本プロジェクトは作者が一人でメンテナンスしています。fork してご自身のプロジェクトにすることは歓迎します。その際は本プロジェクトを出典として明記し、MIT ライセンスに基づき著作権表示とライセンス表示を残してください。
 
 Amazon Bedrock および AWS は Amazon.com, Inc. またはその関連会社の商標です。本プロジェクトは独立したものであり、Amazon.com, Inc. または AWS との提携関係はなく、承認や後援も受けていません。

@@ -75,14 +75,47 @@ describe('resolveModels', () => {
     it('資料表沒有的模型用保守值、不送 thinking，並寫進 notes', () => {
         const r = resolveModels(profiles, foundations, 'geo', true);
         const sonnet3 = r.models.find((m) => m.baseId === 'anthropic.claude-3-sonnet-20240229-v1:0');
-        expect(sonnet3).toMatchObject({ contextWindow: 32_000, maxOutputTokens: 4_096, thinking: 'none' });
+        // Conservative context window 128K is the user's decision (2026-10-01).
+        expect(sonnet3).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_096, thinking: 'none' });
         expect(r.notes.join('\n')).toContain('claude-3-sonnet');
+        expect(r.unknownIds).toEqual(['anthropic.claude-3-sonnet-20240229-v1:0']);
     });
 
-    it('找不到 foundation model 時：名稱改用去掉地區字樣的 profile 名稱，不回報圖片輸入', () => {
+    it('資料表沒有、但已快取 model card 的模型用 model card 的數字，thinking 仍不送', () => {
+        // Llama 3.3 figures come from model-card-meta-llama-3-3-70b-instruct (fetched 2026-10-01).
+        const cards = new Map([['meta.llama3-3-70b-instruct-v1:0', { card: 'model-card-meta-llama-3-3-70b-instruct', contextWindow: 128_000, maxOutputTokens: 4_000 }]]);
+        const r = resolveModels(profiles, foundations, 'geo', false, cards);
+        expect(r.models.find((m) => m.baseId === 'meta.llama3-3-70b-instruct-v1:0')).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_000, thinking: 'none' });
+        expect(r.unknownIds).not.toContain('meta.llama3-3-70b-instruct-v1:0');
+        expect(r.notes.join('\n')).toContain('model-card-meta-llama-3-3-70b-instruct');
+    });
+
+    it('model card 寫明 bedrock-runtime 不支援 Converse 的模型不列出', () => {
+        // model-card-amazon-nova-2-sonic (fetched 2026-10-01) lists only InvokeModelWithBidirectionalStream.
+        const sonic = 'amazon.nova-2-sonic-v1:0';
+        const cards = new Map([[sonic, { card: 'model-card-amazon-nova-2-sonic', contextWindow: 1_000_000, maxOutputTokens: 64_000, converse: false }]]);
+        const r = resolveModels([], [foundation(sonic, 'Nova 2 Sonic', { onDemand: true })], 'geo', false, cards);
+        expect(ids(r)).not.toContain(sonic);
+        expect(r.notes.join('\n')).toContain('does not list Converse');
+    });
+
+    it('資料表有的模型優先用資料表，不用 model card', () => {
+        const cards = new Map([[OPUS_55, { card: 'model-card-other', contextWindow: 8_000, maxOutputTokens: 1_000 }]]);
+        const opus = resolveModels(profiles, foundations, 'geo', true, cards).models.find((m) => m.baseId === OPUS_55);
+        expect(opus).toMatchObject({ contextWindow: 1_000_000, maxOutputTokens: 128_000, thinking: 'adaptiveAlways' });
+    });
+
+    it('找不到 foundation model 時：名稱改用去掉地區字樣的 profile 名稱，並視為支援圖片輸入', () => {
+        // Expected imageInput=true is the user's decision (2026-09-30): Bedrock rejects unsupported images explicitly.
         const sonnet3 = resolveModels(profiles, foundations, 'geo', true).models.find((m) => m.baseId.includes('claude-3-sonnet'));
         expect(sonnet3?.name).toBe('Anthropic Claude 3 Sonnet');
-        expect(sonnet3?.imageInput).toBe(false);
+        expect(sonnet3?.imageInput).toBe(true);
+    });
+
+    it('沒有 ListFoundationModels 資料時仍從 inference profile 列出模型，thinking 格式取自模型卡資料表', () => {
+        const r = resolveModels(profiles, [], 'geo', true);
+        const opus = r.models.find((m) => m.baseId === OPUS_55);
+        expect(opus).toMatchObject({ invokeId: `us.${OPUS_55}`, thinking: 'adaptiveAlways', imageInput: true });
     });
 
     it('imageInput 依 foundation model 的 inputModalities', () => {

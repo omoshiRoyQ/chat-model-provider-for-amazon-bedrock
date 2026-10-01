@@ -2,7 +2,7 @@
   "name": "chat-model-provider-for-amazon-bedrock",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "omoshiRoyQ",
   "icon": "icon.png",
   "license": "MIT",
@@ -144,6 +144,7 @@
     "check-types": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "check-licenses": "node scripts/check-third-party-notices.mjs",
+    "check-model-cards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-model-cards.mts",
     "vsix": "pnpm run check-licenses && vsce package --no-dependencies",
     "package": "pnpm run check-types && pnpm run check-licenses && node esbuild.mjs --production",
     "vscode:prepublish": "pnpm run package"

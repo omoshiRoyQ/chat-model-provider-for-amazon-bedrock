@@ -36,13 +36,30 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
 
 ## AWS Permissions
 
-The following permissions are needed to list models and use streaming chat:
+| Permission | Purpose | Required |
+| --- | --- | --- |
+| `bedrock:ListInferenceProfiles` | Get the list of models you can call | Yes |
+| `bedrock:InvokeModelWithResponseStream` | Chat with models using streaming | Yes |
+| `bedrock:ListFoundationModels` | Get model capabilities, such as image support | Recommended |
 
-- `bedrock:ListInferenceProfiles`
-- `bedrock:ListFoundationModels`
-- `bedrock:InvokeModelWithResponseStream`
+Without `bedrock:ListFoundationModels`, chat still works, with these differences:
+
+- **Images**: The extension cannot tell whether a model supports images, so every model accepts image attachments. If the model does not support images, you see an error after sending. The same applies to images returned by agent tools, such as screenshots.
+- **Model list**: Only models whose IDs start with a prefix such as `us.` or `global.` are listed. Models that can be called only by their plain model ID, such as `openai.gpt-oss-20b-1:0`, do not appear.
+- **When Model Filter shows all models**: Models that cannot chat, such as image generation and embedding models, also appear in the picker.
+
+With the default Claude and GPT filter, the main difference is image support.
 
 Some third-party Marketplace models also require `aws-marketplace:ViewSubscriptions` and `aws-marketplace:Subscribe`, as well as a completed subscription for the model. Ask your AWS administrator to scope resource ARNs and conditions to your models, region, and organization policies.
+
+To check the model list permissions, run these commands with your profile and region. They do not call a model and incur no charges.
+
+```powershell
+aws bedrock list-inference-profiles --profile <profile> --region <region>
+aws bedrock list-foundation-models --profile <profile> --region <region>
+```
+
+If the first command fails, the model list cannot be loaded. If only the second command fails, chat still works with the differences listed above. These commands do not check `bedrock:InvokeModelWithResponseStream`; to confirm it, send a message in Chat.
 
 ## Settings
 
@@ -74,8 +91,9 @@ This extension does not implement or send telemetry, and it does not send analyt
 
 1. Amazon Bedrock in the selected region, through your AWS profile (loading the model list and streaming chat).
 2. An HTTPS GET request to the public AWS price file when you select **Update Prices**. The request contains no account information or credentials.
+3. HTTPS GET requests to public AWS model card pages (docs.aws.amazon.com) when your model list includes a model missing from the built-in list, to read its context window and maximum output tokens. Models already looked up are not requested again until the cached data is older than 7 days. The requests contain no account information or credentials.
 
-When you select the sign-in button, the extension starts AWS CLI `aws sso login` locally. The extension never starts sign-in automatically in the background.
+When you select the sign-in button, the extension starts AWS CLI `aws sso login` locally, and AWS CLI opens your browser to complete sign-in (for example, to choose an account and approve access). The extension never starts sign-in automatically in the background.
 
 VS Code's own telemetry follows the VS Code `telemetry.telemetryLevel` setting and is not controlled by this extension.
 
@@ -93,7 +111,7 @@ VS Code's own telemetry follows the VS Code `telemetry.telemetryLevel` setting a
 
 ### Local Storage
 
-- VS Code `globalState` stores only usage totals (profile name, model ID, token and request counts), per-model thinking settings, and downloaded price tables. This data is not synced to other devices. Reset usage totals from the usage panel and thinking settings with **Set Thinking Effort**; downloaded price tables are replaced when you select **Update Prices**.
+- VS Code `globalState` stores only usage totals (profile name, model ID, token and request counts), per-model thinking settings, downloaded price tables, and token limits read from AWS model cards. This data is not synced to other devices. Reset usage totals from the usage panel and thinking settings with **Set Thinking Effort**; downloaded price tables are replaced when you select **Update Prices**.
 - The extension does not write chat content to local storage or logs.
 
 ### Logs
@@ -108,7 +126,7 @@ The source code is available on [GitHub](https://github.com/omoshiRoyQ/chat-mode
 ## Troubleshooting
 
 - **No AWS Region is configured**: Set `amazonBedrockProvider.region` in VS Code settings or configure a region in your AWS profile.
-- **Model list permissions are missing**: Ask your administrator to grant `bedrock:ListInferenceProfiles` and `bedrock:ListFoundationModels`.
+- **Model list permissions are missing**: Ask your administrator to grant `bedrock:ListInferenceProfiles`.
 - **Model invocation is denied**: Check that the profile has `bedrock:InvokeModelWithResponseStream` and that the model is available in the selected region and inference scope. Marketplace models may also require subscription permissions.
 - **SSO sign-in has expired**: Select the Bedrock sign-in button or run `aws sso login --profile <profile>`, then resend the failed Chat request.
 - **Detailed diagnostics**: Run **Show Logs** from the Command Palette. Redact personal information and verification details before sharing logs.
@@ -116,5 +134,7 @@ The source code is available on [GitHub](https://github.com/omoshiRoyQ/chat-mode
 ## License
 
 This project is licensed under MIT; see [LICENSE](LICENSE). Licenses and copyright notices for bundled dependencies are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+This project is maintained solely by its author. You are welcome to fork it and turn it into your own project; just credit this project as the source and keep the copyright and license notice required by the MIT license.
 
 Amazon Bedrock and AWS are trademarks of Amazon.com, Inc. or its affiliates. This independent project is not affiliated with, endorsed by, or sponsored by Amazon.com, Inc. or AWS.

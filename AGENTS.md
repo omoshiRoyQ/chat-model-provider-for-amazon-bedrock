@@ -17,6 +17,11 @@
 
 - 套件管理一律用 pnpm，不可執行 `npm install` 或 `yarn`，也不可產生 `package-lock.json`、`yarn.lock`。理由：使用者的偏好；多個 lockfile 並存會讓相依版本不一致。
 - 建置：`pnpm run compile`（先 `tsc --noEmit` 檢查型別，再用 esbuild 輸出 `dist/extension.js`）
+- 更新 CATALOG：執行 `pnpm run check-model-cards --profile <使用者提供> --region <使用者提供>`。腳本讀取 AWS 公開 model card 與 CATALOG 比對，對可以加入的 Claude／GPT 模型送小的 ConverseStream 請求實測 thinking 格式（會產生少量費用），再印出可以直接貼進 CATALOG 的行，不修改檔案。理由：thinking 格式從文件看不出來（Opus 5.5 不能關閉 thinking 是實測才發現的）。
+  1. 依輸出修改 CATALOG：貼上「可以加入」與「改成」的行（連同 `// Verified` 註解），刪除「可以刪除」的項目，並更新 CATALOG 開頭的查閱日期。
+  2. 標示「無法實測」的項目（沒有權限、模型已 EOL 等）先問使用者，不可比照同系列的模型自行填 thinking，理由同「不從模型名稱推測」。`'TODO'` 會讓型別檢查失敗，不要貼進 CATALOG。
+  3. 執行 `pnpm test`、`pnpm run compile`，並在 CHANGELOG 三種語言的版本都記錄。
+  4. 腳本的判斷或解析出錯時，修正 [scripts/check-model-cards.mts](scripts/check-model-cards.mts) 或 `src/modelCards.ts`，不要手動繞過。
 - 測試：`pnpm test`（Vitest，測試放在 `test/*.test.ts`）。單元測試不在 Extension Host 裡執行，`vscode` 模組由 `vitest.config.mts` 以 alias 換成 `test/vscode-stub.ts`；`src` 用到新的 VS Code 類別時，要同步補進替身。`pnpm run compile` 也會以 `tsconfig.test.json` 檢查測試程式的型別。
 - 測試的預期值要來自 AWS 文件、實測的 AWS 回應或使用者決定，並在測試檔註明來源；不可拿程式自己算出來的結果當預期值。
 - pnpm 預設禁止相依套件執行 build script，esbuild 已在 `pnpm-workspace.yaml` 的 `allowBuilds` 允許。之後新增的套件如果需要 build script，`pnpm install` 會以 `ERR_PNPM_IGNORED_BUILDS` 失敗，要先問使用者，再用 `pnpm approve-builds <pkg>` 加入。不可用 `--all` 一次全部允許。理由：build script 能執行任意程式，屬於供應鏈風險。

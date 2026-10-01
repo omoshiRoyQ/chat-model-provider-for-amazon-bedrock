@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeError, describeErrorForLog, isCredentialError, withOperationContext } from '../src/errors';
+import { describeError, describeErrorForLog, isCredentialError, isSystemMessageUnsupported, withOperationContext } from '../src/errors';
 
 /**
  * Expected values come from AGENTS.md (errors include the model ID, call path, and AWS error code; expired SSO prompts for aws sso login)
@@ -12,6 +12,15 @@ function awsError(name: string, message: string, httpStatusCode?: number): Error
     Object.assign(error, { $metadata: { httpStatusCode, requestId: 'req-1' } });
     return error;
 }
+
+describe('isSystemMessageUnsupported', () => {
+    it('辨識 Mistral 7B Instruct 實測回傳的訊息（2026-10-01）', () => {
+        const message = "This model doesn't support system messages. Try again without a system message or use a model that supports system messages.";
+        expect(isSystemMessageUnsupported(awsError('ValidationException', message, 400))).toBe(true);
+        expect(isSystemMessageUnsupported(awsError('ValidationException', 'bad request', 400))).toBe(false);
+        expect(isSystemMessageUnsupported(awsError('AccessDeniedException', message, 403))).toBe(false);
+    });
+});
 
 describe('describeError', () => {
     it('一般錯誤包含 model ID、呼叫路徑、錯誤碼、HTTP 狀態碼與原始訊息', () => {
@@ -67,21 +76,21 @@ describe('describeError', () => {
         expect(logMessage).not.toContain('Region is missing');
     });
 
-    it('ListFoundationModels 遭拒時指出 IAM action、region 與 AWS request ID', () => {
-        const rawMessage = 'User: arn:aws:sts::123456789012:assumed-role/Test/user.name@example.com is not authorized to perform: bedrock:ListFoundationModels';
-        const error = withOperationContext(awsError('AccessDeniedException', rawMessage, 403), 'ListFoundationModels', 'us-west-2');
+    it('ListInferenceProfiles 遭拒時指出 IAM action、region 與 AWS request ID', () => {
+        const rawMessage = 'User: arn:aws:sts::123456789012:assumed-role/Test/user.name@example.com is not authorized to perform: bedrock:ListInferenceProfiles';
+        const error = withOperationContext(awsError('AccessDeniedException', rawMessage, 403), 'ListInferenceProfiles', 'us-west-2');
         const message = describeError(error, 'model list', 'Native', 'BedrockX');
         const logMessage = describeErrorForLog(error, 'model list', 'Native', 'BedrockX');
 
-        expect(message).toContain('bedrock:ListFoundationModels');
+        expect(message).toContain('bedrock:ListInferenceProfiles');
         expect(message).toContain('us-west-2');
         expect(message).toContain('BedrockX');
         expect(message).toContain('http=403');
         expect(message).toContain('requestId=req-1');
         expect(message).not.toContain('arn:aws:');
         expect(message).not.toContain('user.name@example.com');
-        expect(logMessage).toContain('lacks bedrock:ListFoundationModels permission');
-        expect(logMessage).toContain('operation=ListFoundationModels');
+        expect(logMessage).toContain('lacks bedrock:ListInferenceProfiles permission');
+        expect(logMessage).toContain('operation=ListInferenceProfiles');
         expect(logMessage).toContain('region=us-west-2');
         expect(logMessage).toContain('requestId=req-1');
         expect(logMessage).not.toContain('arn:aws:');

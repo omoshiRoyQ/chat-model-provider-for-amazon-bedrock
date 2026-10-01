@@ -3,6 +3,7 @@ import type {
     ImageBlock,
     ImageFormat,
     Message,
+    SystemContentBlock,
     Tool,
     ToolConfiguration,
     ToolResultContentBlock,
@@ -81,8 +82,27 @@ function collectToolNames(messages: readonly Message[]): Set<string> {
 }
 
 /**
+ * VS Code's System role is only in the proposed languageModelSystem API; Copilot Chat sends its instructions with it
+ * (log showed roles=3:1,1:2 on 2026-10-01).
+ */
+const SYSTEM_ROLE = 3;
+
+const isSystem = (message: vscode.LanguageModelChatRequestMessage) => (message.role as number) === SYSTEM_ROLE;
+
+/** Text of system messages for Converse's `system` field; undefined when there is none. */
+export function toConverseSystem(messages: readonly vscode.LanguageModelChatRequestMessage[]): SystemContentBlock[] | undefined {
+    const blocks = messages
+        .filter(isSystem)
+        .flatMap((m) => m.content)
+        .flatMap((part) => (part instanceof vscode.LanguageModelTextPart && part.value ? [{ text: part.value }] : []));
+    return blocks.length > 0 ? blocks : undefined;
+}
+
+/**
  * Converts VS Code messages to Converse format.
  *
+ * - System messages are omitted (send them with toConverseSystem) unless `systemAsUser` is set for models that reject
+ *   Converse system messages; they are then sent as user text.
  * - Converse requires user and assistant messages to alternate, so adjacent messages with the same role are merged.
  *   Keep this merge: for parallel tool calls, VS Code puts each tool result in a separate user message,
  *   but Converse requires all toolResult blocks in the user message immediately following the assistant message;
@@ -97,10 +117,14 @@ export function toConverseMessages(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     log: vscode.LogOutputChannel,
     imageInput: boolean,
+    systemAsUser = false,
 ): Message[] {
     const result: Message[] = [];
     const skipped = new Map<string, number>();
     for (const message of messages) {
+        if (isSystem(message) && !systemAsUser) {
+            continue;
+        }
         const role = message.role === vscode.LanguageModelChatMessageRole.Assistant ? 'assistant' : 'user';
         const content: ContentBlock[] = [];
         for (const part of message.content) {

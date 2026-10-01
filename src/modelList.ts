@@ -15,7 +15,7 @@ import type { FoundationSummary, ProfileSummary } from './models';
 export async function fetchModelSources(
     profile: string,
     region: string,
-): Promise<{ region: string; profiles: ProfileSummary[]; foundations: FoundationSummary[] }> {
+): Promise<{ region: string; profiles: ProfileSummary[]; foundations: FoundationSummary[]; foundationsDenied: boolean }> {
     const client = new BedrockClient({
         profile,
         region: region || undefined,
@@ -47,22 +47,27 @@ export async function fetchModelSources(
             nextToken = page.nextToken;
         } while (nextToken);
 
-        // ListFoundationModels does not paginate.
+        // ListFoundationModels does not paginate. It is optional: without it, models come from inference profiles only.
         let foundation;
+        let foundationsDenied = false;
         try {
             foundation = await client.send(new ListFoundationModelsCommand({}));
         } catch (error) {
-            throw withOperationContext(error, 'ListFoundationModels', region);
+            if ((error as { name?: string } | undefined)?.name !== 'AccessDeniedException') {
+                throw withOperationContext(error, 'ListFoundationModels', region);
+            }
+            foundationsDenied = true;
         }
 
         return {
             region,
+            foundationsDenied,
             profiles: summaries.flatMap((p) => (p.inferenceProfileId ? [{
                 id: p.inferenceProfileId,
                 name: p.inferenceProfileName ?? p.inferenceProfileId,
                 active: p.status === 'ACTIVE',
             }] : [])),
-            foundations: (foundation.modelSummaries ?? []).flatMap((m) => (m.modelId ? [{
+            foundations: (foundation?.modelSummaries ?? []).flatMap((m) => (m.modelId ? [{
                 id: m.modelId,
                 name: m.modelName ?? m.modelId,
                 textOutput: m.outputModalities?.includes('TEXT') ?? false,

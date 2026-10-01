@@ -32,6 +32,12 @@ export function isCredentialError(error: unknown): boolean {
     return name !== undefined && CREDENTIAL_ERROR_NAMES.has(name);
 }
 
+/** Message verified on 2026-10-01 with Mistral 7B Instruct: "This model doesn't support system messages. ..." */
+export function isSystemMessageUnsupported(error: unknown): boolean {
+    const e = error as AwsLikeError | undefined;
+    return e?.name === 'ValidationException' && /doesn't support system messages/i.test(e.message ?? '');
+}
+
 /** Preserve AWS error details while adding the operation and resolved region that failed. */
 export function withOperationContext(error: unknown, operation: string, region?: string): Error {
     const source = (error ?? {}) as AwsLikeError;
@@ -70,8 +76,8 @@ export function describeErrorForLog(error: unknown, modelId: string, path: CallP
     if (e.operation === 'ResolveRegion' && /region is missing/i.test(message)) {
         return `No AWS Region is configured. Set amazonBedrockProvider.region in VS Code settings or configure a region in AWS profile "${profile}". (${detail})`;
     }
-    if (e.name === 'AccessDeniedException' && e.operation === 'ListFoundationModels') {
-        return `AWS profile "${profile}" lacks bedrock:ListFoundationModels permission in region ${e.region ?? 'unknown'}. (${detail})`;
+    if (e.name === 'AccessDeniedException' && e.operation === 'ListInferenceProfiles') {
+        return `AWS profile "${profile}" lacks bedrock:ListInferenceProfiles permission in region ${e.region ?? 'unknown'}. (${detail})`;
     }
     const summary = isCredentialError(error)
         ? `AWS credentials for profile "${profile}" are expired or invalid.`
@@ -101,11 +107,11 @@ export function describeError(error: unknown, modelId: string, path: CallPath, p
         );
     }
 
-    if (code === 'AccessDeniedException' && e.operation === 'ListFoundationModels') {
+    if (code === 'AccessDeniedException' && e.operation === 'ListInferenceProfiles') {
         return vscode.l10n.t(
             'Cannot list Bedrock models: AWS profile "{0}" is not authorized to perform `{1}` in region {2}. Ask your AWS administrator to grant this action. ({3})',
             profile,
-            'bedrock:ListFoundationModels',
+            'bedrock:ListInferenceProfiles',
             e.region ?? 'unknown',
             detail,
         );

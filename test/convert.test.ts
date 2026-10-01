@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { buildToolConfig, toConverseMessages } from '../src/convert';
+import { buildToolConfig, toConverseMessages, toConverseSystem } from '../src/convert';
 
 /**
  * Expected values are based on actual Bedrock Converse behavior verified with the SDK on 2026-09-25 and 26; see comments in src/convert.ts.
@@ -108,6 +108,25 @@ describe('toConverseMessages', () => {
         expect(all).not.toContain('"image"');
         expect(all.match(/does not accept image input/g)).toHaveLength(2);
         expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('2'));
+    });
+});
+
+describe('system 訊息', () => {
+    // Role 3 is what Copilot Chat sent for its instructions (log roles=3:1,1:2 on 2026-10-01).
+    const system = (value: string): vscode.LanguageModelChatRequestMessage => ({ role: 3 as vscode.LanguageModelChatMessageRole, content: [text(value)], name: undefined });
+    const input = [system('Be brief.'), user(text('1+1=?'))];
+
+    it('預設放進 Converse 的 system 欄位，不混進 user 訊息', () => {
+        expect(toConverseSystem(input)).toEqual([{ text: 'Be brief.' }]);
+        expect(toConverseMessages(input, makeLog(), true)).toEqual([{ role: 'user', content: [{ text: '1+1=?' }] }]);
+    });
+
+    it('systemAsUser 時改成 user 文字（給不支援 system 的模型）', () => {
+        expect(toConverseMessages(input, makeLog(), true, true)).toEqual([{ role: 'user', content: [{ text: 'Be brief.' }, { text: '1+1=?' }] }]);
+    });
+
+    it('沒有 system 訊息時不帶 system 欄位', () => {
+        expect(toConverseSystem([user(text('hi'))])).toBeUndefined();
     });
 });
 

@@ -5,6 +5,7 @@
  * ListInferenceProfiles and ListFoundationModels do not return token limits, so all values come from AWS model cards:
  * https://docs.aws.amazon.com/bedrock/latest/userguide/<card>.html (accessed 2026-09-25).
  * The catalog is keyed by foundation model ID without an inference-profile prefix.
+ * Models missing from the catalog use limits from model cards fetched at runtime (modelCardStore.ts), then conservative values.
  */
 
 /**
@@ -33,7 +34,7 @@ interface CatalogEntry {
 const K = 1_000;
 const M = 1_000_000;
 
-const CATALOG: Readonly<Record<string, CatalogEntry>> = {
+export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     // ── Anthropic ── Context, max output, and thinking formats come from each model card (accessed 2026-09-25).
     'anthropic.claude-3-haiku-20240307-v1:0': { card: 'model-card-anthropic-claude-3-haiku', contextWindow: 200 * K, maxOutputTokens: 4 * K, thinking: 'none' },
     'anthropic.claude-haiku-4-5-20251001-v1:0': { card: 'model-card-anthropic-claude-haiku-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
@@ -41,6 +42,8 @@ const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     'anthropic.claude-sonnet-4-5-20250929-v1:0': { card: 'model-card-anthropic-claude-sonnet-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
     'anthropic.claude-sonnet-4-6': { card: 'model-card-anthropic-claude-sonnet-4-6', contextWindow: 1 * M, maxOutputTokens: 64 * K, thinking: 'adaptive' },
     'anthropic.claude-sonnet-5': { card: 'model-card-anthropic-claude-sonnet-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
+    // Verified by the user on 2026-10-01: thinking cannot be turned off.
+    'anthropic.claude-sonnet-5-5': { card: 'model-card-anthropic-claude-sonnet-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways' },
     'anthropic.claude-opus-4-1-20250805-v1:0': { card: 'model-card-anthropic-claude-opus-4-1', contextWindow: 200 * K, maxOutputTokens: 32 * K, thinking: 'extended' },
     'anthropic.claude-opus-4-5-20251101-v1:0': { card: 'model-card-anthropic-claude-opus-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
     'anthropic.claude-opus-4-6-v1': { card: 'model-card-anthropic-claude-opus-4-6', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
@@ -53,24 +56,31 @@ const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     'anthropic.claude-fable-5-1': { card: 'model-card-anthropic-claude-fable-5-1', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways' },
     // No model card was found for Claude 3 Sonnet, so it is omitted from the catalog and uses conservative values with a log entry.
 
-    // ── OpenAI ── Leave maxOutputTokens undefined when the model card omits max output, so the conservative value is used.
-    'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1 * M, thinking: 'openai', nativeUnsupported: true },
-    'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1 * M, thinking: 'openai', nativeUnsupported: true },
-    'openai.gpt-5.6-luna': { card: 'model-card-openai-gpt-56-luna', contextWindow: 1 * M, thinking: 'openai' },
-    'openai.gpt-5.6-sol': { card: 'model-card-openai-gpt-56-sol', contextWindow: 1 * M, thinking: 'openai' },
-    'openai.gpt-5.6-terra': { card: 'model-card-openai-gpt-56-terra', contextWindow: 1 * M, thinking: 'openai' },
+    // ── OpenAI ── Limits come from each model card (rechecked 2026-10-01 with check-model-cards).
+    'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true },
+    'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true },
+    'openai.gpt-5.6-luna': { card: 'model-card-openai-gpt-56-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai' },
+    'openai.gpt-5.6-sol': { card: 'model-card-openai-gpt-56-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai' },
+    'openai.gpt-5.6-terra': { card: 'model-card-openai-gpt-56-terra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai' },
     // GPT-6 Astra was verified to reject `none` for reasoning.effort. Luna and Sol could not be tested due to missing permissions,
     // so they are also marked openaiNoNone: `off` maps to `low`, which is confirmed to work for Astra.
     'openai.gpt-6-astra': { card: 'model-card-openai-gpt-6-astra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone' },
-    'openai.gpt-6-luna': { card: 'model-card-openai-gpt-6-luna', contextWindow: 1_050_000, thinking: 'openaiNoNone' },
-    'openai.gpt-6-sol': { card: 'model-card-openai-gpt-6-sol', contextWindow: 1_050_000, thinking: 'openaiNoNone' },
+    'openai.gpt-6-luna': { card: 'model-card-openai-gpt-6-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone' },
+    'openai.gpt-6-sol': { card: 'model-card-openai-gpt-6-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone' },
+    // Verified 2026-10-01 with ConverseStream (us-west-2, bare model IDs): baseline, effort=low, and effort=none all succeeded.
+    'openai.gpt-oss-120b-1:0': { card: 'model-card-openai-gpt-oss-120b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
+    'openai.gpt-oss-20b-1:0': { card: 'model-card-openai-gpt-oss-20b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
+    'openai.gpt-oss-safeguard-120b': { card: 'model-card-openai-gpt-oss-safeguard-120b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
+    'openai.gpt-oss-safeguard-20b': { card: 'model-card-openai-gpt-oss-safeguard-20b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
+    // Not added (2026-10-01): Claude 3.5 Haiku returned end-of-life ResourceNotFoundException; Claude Mythos 5.1 and GPT-6.1 Sol could not be tested with the available profile.
 };
 
 /**
- * Conservative limits used when no source is available. They are intentionally small: reporting a value that is too large
- * may cause VS Code to send more content than the model accepts; a value that is too small only truncates history earlier.
+ * Conservative limits used when no source is available. Too large a value makes long requests fail with ValidationException;
+ * too small a value makes VS Code trim history and attachments. 128K is the user's choice (2026-10-01): of the text models
+ * with model cards on that date, only a few older ones had a context window below 128K.
  */
-const CONSERVATIVE_CONTEXT_WINDOW = 32 * K;
+const CONSERVATIVE_CONTEXT_WINDOW = 128 * K;
 const CONSERVATIVE_MAX_OUTPUT = 4_096;
 
 export type InferenceScope = 'geo' | 'global';
@@ -106,16 +116,28 @@ export interface ResolvedModel {
     readonly maxOutputTokens: number;
     readonly thinking: ThinkingStyle;
     /**
-    * Determined from inputModalities returned by ListFoundationModels; never inferred from a model name.
-    * False for models without foundation-model data (for example, Claude 3 Haiku and Claude 3 Sonnet in us-west-2).
+     * Determined from inputModalities returned by ListFoundationModels; never inferred from a model name.
+     * True when foundation-model data is unavailable (user decision): Bedrock rejects unsupported images with an explicit error.
      */
     readonly imageInput: boolean;
+}
+
+/** Token limits parsed from an AWS model card at runtime. */
+export interface CardLimits {
+    readonly card: string;
+    readonly contextWindow?: number;
+    readonly maxOutputTokens?: number;
+    readonly converse?: boolean;
 }
 
 interface ResolveResult {
     readonly models: ResolvedModel[];
     /** Notes to write to the log (for example, conservative values or exclusion reasons). */
     readonly notes: string[];
+    /** Listed models with neither a catalog entry nor a cached model card. */
+    readonly unknownIds: string[];
+    /** Whether any listed model takes its limits from a cached model card. */
+    readonly usesModelCards: boolean;
 }
 
 const GLOBAL_PREFIX = 'global.';
@@ -146,8 +168,11 @@ export function resolveModels(
     foundations: readonly FoundationSummary[],
     scope: InferenceScope,
     onlyClaudeAndGpt: boolean,
+    cardLimits: ReadonlyMap<string, CardLimits> = new Map(),
 ): ResolveResult {
     const notes: string[] = [];
+    const unknownIds: string[] = [];
+    let usesModelCards = false;
     const foundationById = new Map(foundations.map((f) => [f.id, f]));
 
     // Select one profile for each foundation model.
@@ -204,12 +229,25 @@ export function resolveModels(
             notes.push(`${baseId} is omitted because model card ${entry.card} does not support Native Converse`);
             continue;
         }
-        const contextWindow = entry?.contextWindow ?? CONSERVATIVE_CONTEXT_WINDOW;
-        const maxOutputTokens = entry?.maxOutputTokens ?? CONSERVATIVE_MAX_OUTPUT;
-        if (!entry) {
-            notes.push(`No model card found for ${baseId}; using conservative limits context=${contextWindow}, maxOutput=${maxOutputTokens}, and omitting thinking parameters`);
-        } else if (entry.contextWindow === undefined || entry.maxOutputTokens === undefined) {
-            notes.push(`Model card ${entry.card} for ${baseId} does not specify ${entry.contextWindow === undefined ? 'context window' : 'max output'}; using a conservative value for that field`);
+        const card = entry ? undefined : cardLimits.get(baseId);
+        if (card?.converse === false) {
+            notes.push(`${baseId} is omitted because model card ${card.card} does not list Converse for bedrock-runtime`);
+            continue;
+        }
+        const source = entry ?? card;
+        const contextWindow = source?.contextWindow ?? CONSERVATIVE_CONTEXT_WINDOW;
+        const maxOutputTokens = source?.maxOutputTokens ?? CONSERVATIVE_MAX_OUTPUT;
+        if (!source) {
+            unknownIds.push(baseId);
+            notes.push(`No catalog entry or model card found for ${baseId}; using conservative limits context=${contextWindow}, maxOutput=${maxOutputTokens}, and omitting thinking parameters`);
+        } else {
+            if (!entry) {
+                usesModelCards = true;
+                notes.push(`${baseId} is not in the catalog; using limits from AWS model card ${source.card} (context=${contextWindow}, maxOutput=${maxOutputTokens}) and omitting thinking parameters`);
+            }
+            if (source.contextWindow === undefined || source.maxOutputTokens === undefined) {
+                notes.push(`Model card ${source.card} for ${baseId} does not specify ${source.contextWindow === undefined ? 'context window' : 'max output'}; using a conservative value for that field`);
+            }
         }
         models.push({
             invokeId: pick.invokeId,
@@ -219,11 +257,11 @@ export function resolveModels(
             contextWindow,
             maxOutputTokens,
             thinking: entry?.thinking ?? 'none',
-            imageInput: foundation?.imageInput ?? false,
+            imageInput: foundation?.imageInput ?? true,
         });
     }
     models.sort((a, b) => a.baseId.localeCompare(b.baseId));
-    return { models, notes };
+    return { models, notes, unknownIds, usesModelCards };
 }
 
 /**

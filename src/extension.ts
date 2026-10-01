@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ModelCardStore } from './modelCardStore';
 import type { ResolvedModel } from './models';
 import { PriceStore } from './priceStore';
 import { AmazonBedrockProvider } from './provider';
@@ -46,7 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 .record(profile, id, { name, baseId, route: routeOf(id, resolved) }, usage, s.usageResetDay, s.usageResetHour)
                 .then(refresh);
         },
-    });
+    }, new ModelCardStore(context.globalState));
 
     const currentView = () => {
         const s = readSettings();
