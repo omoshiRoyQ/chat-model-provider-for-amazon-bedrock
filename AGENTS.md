@@ -9,7 +9,6 @@
 
 ## 必須先經過使用者同意的動作
 
-- `git push`。
 - 發布到 VS Code Marketplace（`vsce publish`）。目前只發布到 Marketplace，不發布到 Open VSX。
 - 修改 `~/.aws/config`、`~/.aws/credentials` 或 `~/.aws/sso/cache/`。需要登入時請使用者自己執行 `aws sso login`。
 
@@ -25,7 +24,7 @@
 - 測試：`pnpm test`（Vitest，測試放在 `test/*.test.ts`）。單元測試不在 Extension Host 裡執行，`vscode` 模組由 `vitest.config.mts` 以 alias 換成 `test/vscode-stub.ts`；`src` 用到新的 VS Code 類別時，要同步補進替身。`pnpm run compile` 也會以 `tsconfig.test.json` 檢查測試程式的型別。
 - 測試的預期值要來自 AWS 文件、實測的 AWS 回應或使用者決定，並在測試檔註明來源；不可拿程式自己算出來的結果當預期值。
 - pnpm 預設禁止相依套件執行 build script，esbuild 已在 `pnpm-workspace.yaml` 的 `allowBuilds` 允許。之後新增的套件如果需要 build script，`pnpm install` 會以 `ERR_PNPM_IGNORED_BUILDS` 失敗，要先問使用者，再用 `pnpm approve-builds <pkg>` 加入。不可用 `--all` 一次全部允許。理由：build script 能執行任意程式，屬於供應鏈風險。
-- 封裝 VSIX：`pnpm run vsix`。一定要帶 `--no-dependencies`：esbuild 會將 extension 程式碼和相依套件合併輸出為單一檔案 `dist/extension.js`，而 vsce 預設用 npm 檢查 `node_modules`，和 pnpm 的目錄結構不相容。`.vscodeignore` 只放行 `dist/extension.js`、`package*.json`、`l10n/`、`icon.png`、README、LICENSE、THIRD-PARTY-NOTICES、CHANGELOG；封裝後要看 vsce 列出的檔案清單，確認沒有 `src`、`test`、`node_modules`。（2026-09-26 實測）
+- 封裝 VSIX：`pnpm run vsix`。一定要帶 `--no-dependencies`：esbuild 會將 extension 程式碼和相依套件合併輸出為單一檔案 `dist/extension.js`，而 vsce 預設用 npm 檢查 `node_modules`，和 pnpm 的目錄結構不相容。`.vscodeignore` 只放行 `dist/extension.js`、`package*.json`、`l10n/`、`icon.png`、README、LICENSE、THIRD-PARTY-NOTICES、CHANGELOG；封裝後要看 vsce 列出的檔案清單（不封裝、只列清單可用 `pnpm run vsix:ls`），確認沒有 `src`、`test`、`node_modules`。（2026-09-26 實測）
 - `@vscode/vsce-sign` 在 `pnpm-workspace.yaml` 的 `allowBuilds` 設為 `false`：它是 vsce 的簽章工具，安裝腳本會下載執行檔，但 `vsce package` 不需要它（2026-09-26 實測）。發布時如果需要簽章，先問使用者再改。
 - 證據層級：編譯通過不代表 extension 能啟用；在 Extension Development Host（F5）能用，也不代表封裝後的 VSIX 能用，因為 esbuild 合併輸出時可能遺漏相依套件。兩者都要分別驗證。
 - 模型能否出現在 Chat 選單、Agent 模式能否呼叫 tool，都只能由使用者在 VS Code 內實際操作確認。回報時要說清楚這一步還沒驗證。

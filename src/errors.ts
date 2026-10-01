@@ -85,7 +85,7 @@ export function describeErrorForLog(error: unknown, modelId: string, path: CallP
     return `${summary} (${detail}) ${redactAwsIdentity(message)}`.trimEnd();
 }
 
-function redactAwsIdentity(message: string): string {
+export function redactAwsIdentity(message: string): string {
     return message
         .replace(/\bUser:\s*arn:[^\s]+/gi, 'User: [AWS principal redacted]')
         .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email redacted]');

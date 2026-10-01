@@ -117,7 +117,7 @@ VS Code's own telemetry follows the VS Code `telemetry.telemetryLevel` setting a
 ### Logs
 
 - `Show Logs` records only diagnostics such as profile name, region, model ID, message counts, tool names, and error codes, never chat content. AWS principal ARNs and email addresses in error messages are redacted.
-- Logs may include AWS CLI sign-in output. Review and redact login URLs, verification codes, and personal information before sharing logs.
+- Logs include AWS CLI sign-in output with URL parameters, the organization name in the Start URL, and email addresses replaced by `[redacted]`. Still review logs for personal information before sharing. If the browser does not open during sign-in, run `aws sso login --profile <profile>` in a terminal.
 
 ### Open Source
 

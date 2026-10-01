@@ -107,7 +107,7 @@ VS Code 本身的遙測依 VS Code 的 `telemetry.telemetryLevel` 設定，不�
 
 - Chat 對話、工具結果和附件只會傳送到你自己 AWS 帳戶中的 Amazon Bedrock，由你的 IAM 權限、AWS 帳單與 AWS 條款管理。
 - 依 AWS 文件，模型供應商無法存取 Amazon Bedrock 的客戶 prompt 與回應。詳見 [Amazon Bedrock Data protection](https://docs.aws.amazon.com/bedrock/latest/userguide/data-protection.html)。
-- Inference scope 設為 `global` 時，請求可能路由至世界各地的 AWS region；有資料落地需求時請使用 `geo`。
+- Inference scope 設為 `global` 時，請求可能路由至世界各地的 AWS region；如果資料必須留在特定地區處理，請使用 `geo`。
 
 ### 本機儲存
 
@@ -117,7 +117,7 @@ VS Code 本身的遙測依 VS Code 的 `telemetry.telemetryLevel` 設定，不�
 ### 紀錄
 
 - 「顯示紀錄」只記錄 profile 名稱、region、model ID、訊息數量、tool 名稱與錯誤碼等診斷資訊，不記錄對話內容。錯誤訊息中的 AWS principal ARN 與 email 會先遮蔽。
-- 紀錄可能包含 AWS CLI 登入輸出；分享紀錄前請檢查並遮蔽登入網址、驗證碼及個人識別資料。
+- 紀錄會包含 AWS CLI 登入輸出，其中網址參數、Start URL 中的組織名稱與電子郵件地址會換成 `[redacted]`。分享紀錄前仍請檢查是否有個人識別資料。登入時瀏覽器沒有開啟的話，請在終端機執行 `aws sso login --profile <profile>`。
 
 ### 開放原始碼
 

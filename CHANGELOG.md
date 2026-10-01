@@ -4,6 +4,10 @@
 
 ## EN
 
+### 1.1.1 (2026-10-02)
+
+- AWS CLI sign-in output in the logs now hides URL parameters, the organization name in the Start URL, and email addresses. If the browser does not open during sign-in, run `aws sso login --profile <profile>` in a terminal.
+
 ### 1.1.0 (2026-10-01)
 
 - Chat instructions from VS Code are now sent as the Converse system prompt instead of being mixed into your message. Models that do not accept system prompts, such as Mistral 7B Instruct, automatically receive the instructions as message text instead.
@@ -32,6 +36,10 @@ First release.
 
 ## TW
 
+### 1.1.1（2026-10-02）
+
+- 紀錄中的 AWS CLI 登入輸出會隱藏網址參數、Start URL 中的組織名稱與電子郵件地址。登入時瀏覽器沒有開啟的話，請在終端機執行 `aws sso login --profile <profile>`。
+
 ### 1.1.0（2026-10-01）
 
 - VS Code 送出的 Chat 指示改用 Converse 的 system prompt 傳送，不再混進你的訊息。不接受 system prompt 的模型（例如 Mistral 7B Instruct）會自動改成把指示放在訊息文字中。
@@ -59,6 +67,10 @@ First release.
 - 不傳送遙測，也不會將分析資料傳送給作者。
 
 ## JP
+
+### 1.1.1（2026-10-02）
+
+- ログ内の AWS CLI サインイン出力で、URL のパラメーター、Start URL 内の組織名、メールアドレスを伏せるようになりました。サインイン時にブラウザーが開かない場合は、ターミナルで `aws sso login --profile <profile>` を実行してください。
 
 ### 1.1.0（2026-10-01）
 

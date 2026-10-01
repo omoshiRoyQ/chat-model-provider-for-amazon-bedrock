@@ -1,5 +1,13 @@
 import { spawn } from 'node:child_process';
 import * as vscode from 'vscode';
+import { redactAwsIdentity } from './errors';
+
+/** Hides OAuth query values (client_id, state, PKCE challenge), the organization's Start URL subdomain, and emails. */
+export function redactSignInOutput(line: string): string {
+    return redactAwsIdentity(line)
+        .replace(/(https?:\/\/[^\s?#]+)[?#]\S*/g, '$1?[redacted]')
+        .replace(/https:\/\/[^\s/.]+\.awsapps\.com/g, 'https://[redacted].awsapps.com');
+}
 
 /**
  * Runs `aws sso login --profile <name>` through the AWS CLI.
@@ -37,11 +45,10 @@ export class SsoSignIn {
                     new Promise<boolean>((resolve) => {
                         this.log.info(`Running aws sso login --profile ${profile}`);
                         const child = spawn('aws', ['sso', 'login', '--profile', profile], { shell: false, windowsHide: true });
-                        // CLI output contains authorization URLs and verification codes; users can retrieve the URL from the log if the browser did not open automatically.
                         const forward = (chunk: Buffer) => {
                             for (const line of chunk.toString('utf8').split(/\r?\n/)) {
                                 if (line.trim()) {
-                                    this.log.info(`[aws sso login] ${line}`);
+                                    this.log.info(`[aws sso login] ${redactSignInOutput(line)}`);
                                 }
                             }
                         };
