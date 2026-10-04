@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { buildToolConfig, toConverseMessages, toConverseSystem } from './convert';
+import { addCachePoints, buildToolConfig, toConverseMessages, toConverseSystem } from './convert';
 import { describeError, describeErrorForLog, isCredentialError, isSystemMessageUnsupported } from './errors';
 import { fetchModelSources } from './modelList';
 import type { ModelCardStore } from './modelCardStore';
@@ -283,10 +283,12 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         const images = converseMessages.reduce((n, m) => n + (m.content?.filter((b) => b.image).length ?? 0), 0);
         // Raw VS Code roles (1=user, 2=assistant; other values are not in the stable API) before merging.
         const roles = [...messages.reduce((m, x) => m.set(x.role, (m.get(x.role) ?? 0) + 1), new Map<number, number>())].map(([r, n]) => `${r}:${n}`).join(',');
+        const promptCache = resolved?.promptCache ?? false;
         this.log.info(
-            `Sending request: model=${model.id}, path=Native, messages=${converseMessages.length}, roles=${roles}, system=${system ? 'field' : systemAsUser ? 'as-user' : 'none'}, images=${images}, tools=${options.tools?.length ?? 0}, toolConfig=${toolConfig ? toolConfig.tools?.length : 'none'}, thinkingEffort=${effort}, fields=${thinking.fields ? JSON.stringify(thinking.fields) : 'none'}`,
+            `Sending request: model=${model.id}, path=Native, messages=${converseMessages.length}, roles=${roles}, system=${system ? 'field' : systemAsUser ? 'as-user' : 'none'}, images=${images}, tools=${options.tools?.length ?? 0}, toolConfig=${toolConfig ? toolConfig.tools?.length : 'none'}, thinkingEffort=${effort}, fields=${thinking.fields ? JSON.stringify(thinking.fields) : 'none'}, promptCache=${promptCache}`,
         );
-        const request = {
+        const withCache = <T extends Parameters<typeof addCachePoints>[0]>(r: T): T => (promptCache ? addCachePoints(r) : r);
+        const baseRequest = {
             profile: settings.profile,
             region: settings.region,
             modelId: model.id,
@@ -296,6 +298,7 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             additionalFields: thinking.fields,
             maxTokens: thinking.maxTokens,
         };
+        const request = withCache(baseRequest);
         const tagFilter = model.id.includes('amazon.nova-') ? new ThinkingTagFilter() : undefined;
         const reportText = (text: string) => {
             if (text) {
@@ -323,7 +326,7 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
                 this.noSystemModels.add(model.id);
                 this.log.warn(`model=${model.id} does not support system messages; resending with the system prompt as user text`);
                 const merged = toConverseMessages(messages, this.log, imageInput, true);
-                usage = await this.native.stream({ ...request, messages: merged, system: undefined }, onPart, token);
+                usage = await this.native.stream(withCache({ ...baseRequest, messages: merged, system: undefined }), onPart, token);
             }
             if (tagFilter) {
                 reportText(tagFilter.flush());

@@ -118,6 +118,25 @@ describe('resolveModels', () => {
         expect(opus).toMatchObject({ invokeId: `us.${OPUS_55}`, thinking: 'adaptiveAlways', imageInput: true });
     });
 
+    it('promptCache 只對 prompt-caching.html 列出的 Claude 開啟（Opus 4.1 未列出；GPT 與資料表沒有的模型不開）', () => {
+        const r = resolveModels(profiles, foundations, 'global', true);
+        const cache = (base: string) => r.models.find((m) => m.baseId === base)?.promptCache;
+        expect(cache(OPUS_55)).toBe(true);
+        expect(cache(OPUS_41)).toBe(false);
+        expect(cache('openai.gpt-6-sol')).toBe(false);
+        expect(cache('anthropic.claude-3-sonnet-20240229-v1:0')).toBe(false);
+    });
+
+    it('longContextThreshold 來自資料表；資料表沒有的模型改用 model card；Claude 沒有', () => {
+        // 272,000 from the GPT model cards' Pricing sections (2026-10-04); the non-catalog card reuses that page figure.
+        const sol61 = 'openai.gpt-uncataloged';
+        const cards = new Map([[sol61, { card: 'model-card-openai-gpt-6-1-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, longContextThreshold: 272_000 }]]);
+        const r = resolveModels([...profiles, profile(`global.${sol61}`)], foundations, 'global', true, cards);
+        expect(r.models.find((m) => m.baseId === 'openai.gpt-6-sol')?.longContextThreshold).toBe(272_000);
+        expect(r.models.find((m) => m.baseId === sol61)?.longContextThreshold).toBe(272_000);
+        expect(r.models.find((m) => m.baseId === OPUS_55)?.longContextThreshold).toBeUndefined();
+    });
+
     it('imageInput 依 foundation model 的 inputModalities', () => {
         const r = resolveModels(profiles, foundations, 'geo', false);
         expect(r.models.find((m) => m.baseId === OPUS_55)?.imageInput).toBe(true);

@@ -18,5 +18,5 @@
     "config.inferenceScope.global": "Global profile. Requests may be processed in any AWS Region worldwide. Falls back to the geographic profile when a model has no global profile.",
     "config.usageResetDay.description": "Day of the month (1–31) when the token usage totals reset. If a month has fewer days, the reset happens on its last day.",
     "config.usageResetHour.description": "Hour (UTC, 0–23) when the token usage totals reset.",
-    "config.customPricing.description": "Your own prices in USD per 1M tokens, keyed by model ID. These override the price table, and are the only way to estimate costs for models that are not in the public AWS price list (for example GPT). Example: `{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`"
+    "config.customPricing.description": "Your own prices in USD per 1M tokens, keyed by model ID. These override the downloaded prices (the public AWS price list, then the price tables on AWS model cards). `cacheRead` and `cacheWrite` are optional prompt cache prices; without them, costs for requests that read or write the prompt cache are not estimated. Custom prices have no long-context tier, so costs for requests above a model's long-context threshold are not estimated. Example: `{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`"
 }

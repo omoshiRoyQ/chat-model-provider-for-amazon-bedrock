@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { buildToolConfig, toConverseMessages, toConverseSystem } from '../src/convert';
+import { addCachePoints, buildToolConfig, toConverseMessages, toConverseSystem } from '../src/convert';
 
 /**
  * Expected values are based on actual Bedrock Converse behavior verified with the SDK on 2026-09-25 and 26; see comments in src/convert.ts.
@@ -153,5 +153,41 @@ describe('buildToolConfig', () => {
 
     it('沒有 tools 也沒有 tool 歷史時不帶 toolConfig', () => {
         expect(buildToolConfig(undefined, vscode.LanguageModelChatToolMode.Auto, [{ role: 'user', content: [{ text: 'hi' }] }])).toBeUndefined();
+    });
+});
+
+/**
+ * Placement is the user's design (2026-10-03). AWS prompt-caching.html: cachePoint is allowed in tools, system, and messages,
+ * at most 4 per request; omitting ttl uses the 5-minute default.
+ */
+describe('addCachePoints', () => {
+    const cachePoint = { cachePoint: { type: 'default' } };
+    const toolSpec = { name: 'read_file', inputSchema: { json: {} } };
+
+    it('在 tools、system、最後一則 message 結尾各加一個 cachePoint，不修改原本的物件', () => {
+        const request = {
+            modelId: 'm',
+            system: [{ text: 'Be brief.' }],
+            toolConfig: { tools: [{ toolSpec }], toolChoice: { any: {} } },
+            messages: [
+                { role: 'user' as const, content: [{ text: 'a' }] },
+                { role: 'assistant' as const, content: [{ text: 'b' }] },
+                { role: 'user' as const, content: [{ text: 'c' }] },
+            ],
+        };
+        const before = JSON.stringify(request);
+        const cached = addCachePoints(request);
+        expect(cached.toolConfig).toEqual({ tools: [{ toolSpec }, cachePoint], toolChoice: { any: {} } });
+        expect(cached.system).toEqual([{ text: 'Be brief.' }, cachePoint]);
+        expect(cached.messages[0]).toEqual({ role: 'user', content: [{ text: 'a' }] });
+        expect(cached.messages[2]).toEqual({ role: 'user', content: [{ text: 'c' }, cachePoint] });
+        expect(cached.modelId).toBe('m');
+        expect(JSON.stringify(cached).match(/cachePoint/g)).toHaveLength(3);
+        expect(JSON.stringify(request)).toBe(before);
+    });
+
+    it('沒有 tools、system 或 messages 時不加對應的 cachePoint', () => {
+        const cached = addCachePoints({ messages: [], system: undefined, toolConfig: undefined });
+        expect(cached).toEqual({ messages: [], system: undefined, toolConfig: undefined });
     });
 });

@@ -12,7 +12,8 @@
 - 使用 Claude、GPT 等支援的模型進行 Chat；可篩選只顯示 Claude 與 GPT，或顯示所有符合條件的模型。
 - 支援 Chat Agent 工具呼叫和模型支援的圖片輸入。
 - 可依模型設定 thinking effort；不支援的選項可能由 extension 調整，或由 Bedrock 拒絕。
-- 狀態列顯示本期的輸入／輸出 token，使用量面板依模型列出請求數、token 數與費用估算。
+- 狀態列顯示本期的輸入／輸出 token，使用量面板依模型列出請求數、token 數（含 prompt cache 的讀取與寫入）與費用估算。
+- 支援 prompt cache 的 Claude 模型會使用 Bedrock prompt caching，重複的對話內容可以從快取讀取。
 - 可更新價格表、設定自訂價格、設定每月使用量重設日期與 UTC 時間。
 
 ## 系統需求
@@ -66,7 +67,7 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 - **Model Filter**：只列出 Claude 與 GPT，或列出所有符合條件的模型。
 - **Inference Scope**：`geo` 會使用地理區 inference profile，只提供 global profile 的模型不會列出。`global` 會優先使用 global profile，請求可能路由至世界各地的 AWS region；模型沒有 global profile 時，改用地理區 profile。
 - **Usage Reset Day／Hour**：指定每月重設日（1～31）與 UTC 小時（0～23）。當月沒有該日期時，會在當月最後一天重設。修改排程不會立刻清除使用量，會在新排程的下一個重設時間清除。
-- **Custom Pricing**：依 model ID 設定每百萬 token 的美元單價；自訂價格優先於下載的價格表。例如：
+- **Custom Pricing**：依 model ID 設定每百萬 token 的美元單價；自訂價格優先於下載的價格表。`cacheRead` 與 `cacheWrite` 是選填的 prompt cache 單價；沒有填寫時，有讀取或寫入 prompt cache 的請求不會估算費用。例如：
 
   ```json
   {
@@ -79,7 +80,11 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 
 ## 使用量與費用
 
-Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route 累計。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。GPT 等不在 AWS 公開價格表中的模型需設定自訂價格才會估算費用。
+Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route 累計。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。按下 **更新價格** 會下載 AWS 公開價格表，以及 AWS model card 上的價格表。單價依序取自自訂價格、公開價格表、model card，所以公開價格表沒有的 GPT 模型也能估算費用；費用欄會以 **model card** 標示來自 model card 的價格。三者都沒有價格的模型會顯示 **無價格資料**。
+
+部分 GPT 模型在單一請求的輸入超過 272K token 時，整個請求都改用長 context 價格（依各自的 model card）。Extension 會在記錄每個請求時判斷是否超過，快取讀取與寫入也算在輸入內，超過的請求用長 context 單價計算。這個版本之前記錄的使用量一律用一般單價計算。自訂價格沒有長 context 分級，模型有長 context 請求且只有自訂價格時，費用欄會顯示 **沒有長 context 價格**。
+
+[AWS 文件](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)列為支援 prompt caching 的 Claude 模型，extension 會在工具定義、system prompt 與最新一則訊息的結尾加上 cache point。GPT 等其他模型也可能自行回報快取讀取或寫入。使用量面板的 **輸入 token** 分成 **輸入**（未快取）、**快取讀取**、**快取寫入**三欄，相加就是總輸入，狀態列顯示的是這個總數。快取讀取與寫入分別計價。快取單價來自公開價格表或 model card（GPT 的快取寫入用 30 分鐘的單價）；如果價格是用舊版下載的，請再按一次 **更新價格**。模型有快取 token 但沒有快取單價時，費用欄會顯示 **沒有快取價格**，不計入總計。
 
 狀態列會顯示本期輸入／輸出 token；點選 token 數可開啟使用量面板。面板也可更新價格、開啟自訂價格設定和重設使用量。
 
@@ -91,7 +96,7 @@ Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference 
 
 1. 透過你的 AWS profile 連線至所選 region 的 Amazon Bedrock（載入模型清單、串流對話）。
 2. 你按下「更新價格」時，向 AWS 公開價格檔網址送出 HTTPS GET；請求不含帳號資訊或 AWS 憑證。
-3. 模型清單出現內建資料沒有的模型時，向 AWS 公開文件（docs.aws.amazon.com）的 model card 頁面送出 HTTPS GET，讀取 context window 與最大輸出 token 數。查過的模型不會重複查詢，快取超過 7 天才重新讀取；請求不含帳號資訊或 AWS 憑證。
+3. 向 AWS 公開文件（docs.aws.amazon.com）的 model card 頁面送出 HTTPS GET，讀取 context window、最大輸出 token 數與價格：模型清單出現內建資料沒有的模型時在背景讀取（快取 7 天），按下「更新價格」時則重新讀取所有 model card。請求不含帳號資訊或 AWS 憑證。
 
 你按下登入按鈕時，extension 會在本機啟動 AWS CLI 的 `aws sso login`，AWS CLI 會打開瀏覽器讓你完成登入（例如選擇帳號、核准存取）；extension 不會在背景自動登入。
 
@@ -108,10 +113,11 @@ VS Code 本身的遙測依 VS Code 的 `telemetry.telemetryLevel` 設定，不�
 - Chat 對話、工具結果和附件只會傳送到你自己 AWS 帳戶中的 Amazon Bedrock，由你的 IAM 權限、AWS 帳單與 AWS 條款管理。
 - 依 AWS 文件，模型供應商無法存取 Amazon Bedrock 的客戶 prompt 與回應。詳見 [Amazon Bedrock Data protection](https://docs.aws.amazon.com/bedrock/latest/userguide/data-protection.html)。
 - Inference scope 設為 `global` 時，請求可能路由至世界各地的 AWS region；如果資料必須留在特定地區處理，請使用 `geo`。
+- 支援 prompt caching 的 Claude 模型，Bedrock 會把快取的 prompt 開頭部分保留 5 分鐘（預設 TTL），讓之後的請求重複使用。
 
 ### 本機儲存
 
-- 只在 VS Code `globalState` 儲存使用量統計（profile 名稱、model ID、token 數與請求數）、每個模型的 thinking 設定、下載的價格表，以及從 AWS model card 讀取的 token 上限。這些資料不會同步到其他裝置。使用量統計可從使用量面板重設，thinking 設定可用「設定 thinking effort」指令重設為 Default；下載的價格表會在你按下「更新價格」時被新的價格表取代。
+- 只在 VS Code `globalState` 儲存使用量統計（profile 名稱、model ID、token 數與請求數）、每個模型的 thinking 設定、下載的價格表，以及從 AWS model card 讀取的 token 上限與價格。這些資料不會同步到其他裝置。使用量統計可從使用量面板重設，thinking 設定可用「設定 thinking effort」指令重設為 Default；下載的價格表會在你按下「更新價格」時被新的價格表取代。
 - Extension 不會將 Chat 對話內容寫入本機儲存或紀錄。
 
 ### 紀錄

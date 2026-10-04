@@ -7,10 +7,27 @@ export interface ModelUsage {
     /** Foundation model ID without a route prefix, used for price lookup. */
     readonly baseId: string;
     readonly route: 'Geo' | 'Global' | 'In-Region';
+    /** Uncached input tokens. */
     readonly inputTokens: number;
     readonly outputTokens: number;
+    /** Missing in totals stored before prompt-cache tracking; treat as 0. */
+    readonly cacheReadTokens?: number;
+    readonly cacheWriteTokens?: number;
+    readonly requests: number;
+    /** Subset of the totals from requests above the model's long-context threshold; missing when there were none. */
+    readonly longContext?: UsageCounts;
+}
+
+export interface UsageCounts {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly cacheReadTokens: number;
+    readonly cacheWriteTokens: number;
     readonly requests: number;
 }
+
+/** Model fields that do not accumulate. */
+export type ModelInfo = Pick<ModelUsage, 'name' | 'baseId' | 'route'>;
 
 /** Current-period totals for one profile. Keys are invocation model IDs, including us. or global. prefixes, so Geo and Global are tracked separately. */
 export interface UsagePeriod {
@@ -64,8 +81,26 @@ function resetIfDue(period: UsagePeriod, now: Date): UsagePeriod {
     };
 }
 
+/**
+ * Whether long-context prices apply to a request. Total input (uncached + cache read + cache write, per AWS prompt-caching docs)
+ * is compared with the threshold; the model cards only say "more than 272K input tokens".
+ */
+export function isLongContext(usage: TokenUsage, threshold: number | undefined): boolean {
+    return threshold !== undefined && usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens > threshold;
+}
+
+function addCounts(prev: Partial<UsageCounts> | undefined, usage: TokenUsage): UsageCounts {
+    return {
+        inputTokens: (prev?.inputTokens ?? 0) + usage.inputTokens,
+        outputTokens: (prev?.outputTokens ?? 0) + usage.outputTokens,
+        cacheReadTokens: (prev?.cacheReadTokens ?? 0) + usage.cacheReadTokens,
+        cacheWriteTokens: (prev?.cacheWriteTokens ?? 0) + usage.cacheWriteTokens,
+        requests: (prev?.requests ?? 0) + 1,
+    };
+}
+
 /** Adds one request's token and request totals to the current period (pure function for easier testing). */
-export function addUsage(period: UsagePeriod, invokeId: string, info: Omit<ModelUsage, 'inputTokens' | 'outputTokens' | 'requests'>, usage: TokenUsage): UsagePeriod {
+export function addUsage(period: UsagePeriod, invokeId: string, info: ModelInfo, usage: TokenUsage, longContext = false): UsagePeriod {
     const prev = period.models[invokeId];
     return {
         ...period,
@@ -73,9 +108,8 @@ export function addUsage(period: UsagePeriod, invokeId: string, info: Omit<Model
             ...period.models,
             [invokeId]: {
                 ...info,
-                inputTokens: (prev?.inputTokens ?? 0) + usage.inputTokens,
-                outputTokens: (prev?.outputTokens ?? 0) + usage.outputTokens,
-                requests: (prev?.requests ?? 0) + 1,
+                ...addCounts(prev, usage),
+                ...(longContext ? { longContext: addCounts(prev?.longContext, usage) } : prev?.longContext ? { longContext: prev.longContext } : {}),
             },
         },
     };
@@ -153,17 +187,18 @@ export class UsageStore {
     async record(
         profile: string,
         invokeId: string,
-        info: Omit<ModelUsage, 'inputTokens' | 'outputTokens' | 'requests'>,
+        info: ModelInfo,
         usage: TokenUsage,
         resetDay: number,
         resetHour: number,
         now = new Date(),
+        longContext = false,
     ): Promise<void> {
         const key = this.key(profile);
         return this.serialize(key, async () => {
             await this.applyResetSchedule(key, resetDay, resetHour, now);
             const period = this.get(profile, resetDay, resetHour, now);
-            await this.memento.update(key, addUsage(period, invokeId, info, usage));
+            await this.memento.update(key, addUsage(period, invokeId, info, usage, longContext));
         });
     }
 

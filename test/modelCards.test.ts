@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { ModelCardStore } from '../src/modelCardStore';
-import { MODEL_CARD_INDEX_URL, modelCardNames, modelCardUrl, parseModelCard, parseTokenCount } from '../src/modelCards';
+import { converseCacheModelIds, MODEL_CARD_INDEX_URL, modelCardNames, modelCardUrl, parseCardPricing, parseModelCard, parseTokenCount } from '../src/modelCards';
 
 /**
  * Fixtures are excerpts of the markdown versions of AWS model cards and the user-guide index, fetched on 2026-10-01
@@ -174,9 +174,227 @@ describe('parseModelCard', () => {
     });
 });
 
+/** Pricing sections copied from the markdown model cards fetched on 2026-10-04; expected values are the printed prices. */
+const ASTRA_PRICING = `
+## Pricing
+<a name="model-card-openai-gpt-6-astra-pricing"></a>
+
+All prices are in USD per 1 million tokens. The following tables list Standard and Ultrafast prices.
+
+### Standard — Commercial Regions, short context (272K input tokens or fewer)
+<a name="model-card-openai-gpt-6-astra-pricing-commercial-short"></a>
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region | $11.00 | $13.75 | $1.10 | $55.00 | 
+| Geo CRIS | $11.00 | $13.75 | $1.10 | $55.00 | 
+| Global CRIS | $10.00 | $12.50 | $1.00 | $50.00 | 
+
+### Standard — Commercial Regions, long context (more than 272K input tokens)
+<a name="model-card-openai-gpt-6-astra-pricing-commercial-long"></a>
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region | $22.00 | $27.50 | $2.20 | $82.50 | 
+| Geo CRIS | $22.00 | $27.50 | $2.20 | $82.50 | 
+| Global CRIS | $20.00 | $25.00 | $2.00 | $75.00 | 
+
+### Ultrafast — Commercial Regions, short context (272K input tokens or fewer)
+<a name="model-card-openai-gpt-6-astra-pricing-ultrafast-short"></a>
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region (us-east-1) | $66.00 | $82.50 | $6.60 | $330.00 | 
+| Geo CRIS (US) | $66.00 | $82.50 | $6.60 | $330.00 | 
+| Global CRIS | $60.00 | $75.00 | $6.00 | $300.00 | 
+
+## Programmatic Access
+`;
+
+const SOL_61_PRICING = `
+## Pricing
+
+Long-context rates apply to the full request when input exceeds 272,000 tokens.
+
+### Commercial Regions — short context (272K input tokens or fewer)
+
+
+| **Inference option** | **Input** | **Input — cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| Regional (Mantle in IAD) | $2.20 | $2.75 | $0.11 | $11.00 | 
+| US CRIS (bedrock-runtime) | $2.20 | $2.75 | $0.11 | $11.00 | 
+| Global CRIS (bedrock-runtime) | $2.00 | $2.50 | $0.10 | $10.00 | 
+
+### Commercial Regions — long context (more than 272K input tokens)
+
+
+| **Inference option** | **Input** | **Input — cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| Regional (Mantle in IAD) | $4.40 | $5.50 | $0.22 | $16.50 | 
+| US CRIS (bedrock-runtime) | $4.40 | $5.50 | $0.22 | $16.50 | 
+| Global CRIS (bedrock-runtime) | $4.00 | $5.00 | $0.20 | $15.00 | 
+`;
+
+const LUNA_56_PRICING = `
+## Pricing
+
+### Commercial Regions — short context (272K input tokens or fewer)
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region | $0.22 | $0.275 | $0.022 | $1.32 | 
+| Geo CRIS | $0.22 | $0.275 | $0.022 | $1.32 | 
+| Global CRIS | $0.20 | $0.25 | $0.02 | $1.20 | 
+
+### Commercial Regions — long context (more than 272K input tokens)
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region | $0.44 | $0.55 | $0.044 | $1.98 | 
+| Geo CRIS | $0.44 | $0.55 | $0.044 | $1.98 | 
+| Global CRIS | $0.40 | $0.50 | $0.04 | $1.80 | 
+
+### AWS GovCloud (US-East and US-West)
+
+#### Short context (272K input tokens or fewer)
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region | $0.27 | $0.3375 | $0.027 | $1.62 | 
+`;
+
+const CLAUDE_PRICING = `
+## Pricing
+
+This model is a third-party model offered and billed through AWS Marketplace. For pricing, see the [Amazon Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/) page.
+`;
+
+const KIMI_K3_PRICING = `
+## Pricing
+<a name="model-card-moonshot-ai-kimi-k3-pricing"></a>
+
+
+| **Inference option** | **Input** | **Output** | **Cache read** | **Cache write (30 min)** | 
+| --- | --- | --- | --- | --- | 
+| Global CRIS | $3.00 | $15.00 | $0.30 | $3.75 | 
+| US CRIS | $3.30 | $16.50 | $0.33 | $4.125 | 
+
+*All prices are per 1 million tokens. Pricing shown is for the Standard tier.*
+`;
+
+const GROK_43_PRICING = `
+## Pricing
+<a name="model-card-xai-grok-4-3-pricing"></a>
+
+
+| **Inference option** | **Input** | **Output** | **Cache read** | 
+| --- | --- | --- | --- | 
+| In-Region | $1.25 | $2.50 | $0.20 | 
+
+**AWS GovCloud (US-West)**
+
+
+| **Inference option** | **Input** | **Output** | **Cache read** | 
+| --- | --- | --- | --- | 
+| In-Region | $1.50 | $3.00 | $0.24 | 
+`;
+
+describe('parseCardPricing', () => {
+    it('GPT-6 Astra: Standard short and long tiers, Ultrafast skipped', () => {
+        const geo = { inputPerM: 11, outputPerM: 55, cacheReadPerM: 1.1, cacheWritePerM: 13.75, longContext: { inputPerM: 22, outputPerM: 82.5, cacheReadPerM: 2.2, cacheWritePerM: 27.5 } };
+        expect(parseCardPricing(ASTRA_PRICING)).toEqual({
+            longContextThreshold: 272_000,
+            pricing: {
+                geo,
+                global: { inputPerM: 10, outputPerM: 50, cacheReadPerM: 1, cacheWritePerM: 12.5, longContext: { inputPerM: 20, outputPerM: 75, cacheReadPerM: 2, cacheWritePerM: 25 } },
+                inRegion: geo,
+            },
+        });
+    });
+
+    it('Kimi K3: one table without tiers, "US CRIS" is Geo, 30-minute cache write column', () => {
+        expect(parseCardPricing(KIMI_K3_PRICING)).toEqual({
+            pricing: {
+                geo: { inputPerM: 3.3, outputPerM: 16.5, cacheReadPerM: 0.33, cacheWritePerM: 4.125 },
+                global: { inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3, cacheWritePerM: 3.75 },
+            },
+        });
+    });
+
+    it('Grok 4.3: In-Region only, no cache write column, GovCloud table after it is skipped', () => {
+        expect(parseCardPricing(GROK_43_PRICING)).toEqual({ pricing: { inRegion: { inputPerM: 1.25, outputPerM: 2.5, cacheReadPerM: 0.2 } } });
+    });
+
+    it('GPT-5.4: "—" means the cache write price is not offered', () => {
+        const gpt54 = `
+## Pricing
+
+### Commercial Regions — short context (272K input tokens or fewer)
+
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** | 
+| --- | --- | --- | --- | --- | 
+| In-Region | $2.75 | — | $0.275 | $16.50 | 
+`;
+        expect(parseCardPricing(gpt54).pricing?.inRegion).toEqual({ inputPerM: 2.75, outputPerM: 16.5, cacheReadPerM: 0.275 });
+    });
+
+    it('GPT-6.1 Sol: "US CRIS (bedrock-runtime)" is the Geo row; the Mantle row is skipped', () => {
+        expect(parseCardPricing(SOL_61_PRICING).pricing?.geo).toEqual({
+            inputPerM: 2.2, outputPerM: 11, cacheReadPerM: 0.11, cacheWritePerM: 2.75,
+            longContext: { inputPerM: 4.4, outputPerM: 16.5, cacheReadPerM: 0.22, cacheWritePerM: 5.5 },
+        });
+    });
+
+    it('GPT-5.6 Luna: GovCloud tables are skipped', () => {
+        expect(parseCardPricing(LUNA_56_PRICING).pricing?.geo).toMatchObject({ inputPerM: 0.22, outputPerM: 1.32 });
+    });
+
+    it('Claude cards link to the pricing page and have no prices', () => {
+        expect(parseCardPricing(CLAUDE_PRICING)).toEqual({});
+    });
+
+    it('an unreadable price cell drops the whole card price instead of using part of it', () => {
+        expect(parseCardPricing(SOL_61_PRICING.replace('| $2.00 |', '| TBD |'))).toEqual({});
+    });
+
+    it('parseModelCard includes the pricing fields', () => {
+        expect(parseModelCard('model-card-openai-gpt-6-astra', GPT_6_ASTRA + ASTRA_PRICING)).toMatchObject({ longContextThreshold: 272_000, pricing: { global: { inputPerM: 10 } } });
+    });
+});
+
 describe('modelCardNames', () => {
     it('lists only model-card pages with safe names', () => {
         expect(modelCardNames(INDEX)).toEqual(['model-card-anthropic-claude-haiku-4-5', 'model-card-meta-llama-3-3-70b-instruct']);
+    });
+});
+
+/** Excerpt of prompt-caching.md fetched on 2026-10-04. */
+const PROMPT_CACHING = `
+## Supported models, Regions, and explicit caching limits
+
+| Model name | Model ID | Release Type | Minimum number of tokens per cache checkpoint | Maximum number of cache checkpoints per request | Supported TTL | Fields that accept prompt cache checkpoints | 
+| --- | --- | --- | --- | --- | --- | --- | 
+| Claude Sonnet 5.5 | anthropic.claude-sonnet-5-5 | Generally Available | 512 | 4 | 5 minutes, 1 hour | \`system\`, \`messages\`, and \`tools\` | 
+| Claude Haiku 4.5 | anthropic.claude-haiku-4-5-20251001-v1:0 | Generally Available | 4,096 | 4 | 5 minutes, 1 hour | \`system\`, \`messages\`, and \`tools\` | 
+| GPT-5.6 Sol | openai.gpt-5.6-sol | Generally Available | 1,024 | 4 | 30 minutes | \`prompt_cache_breakpoint\` on \`input_text\`, \`input_image\`, and \`input_file\` blocks (Responses API) | 
+
+To use the 1-hour TTL option ...
+`;
+
+describe('converseCacheModelIds', () => {
+    it('lists models whose checkpoints are accepted in Converse messages; Responses-only GPT rows are skipped', () => {
+        expect(converseCacheModelIds(PROMPT_CACHING)).toEqual(['anthropic.claude-sonnet-5-5', 'anthropic.claude-haiku-4-5-20251001-v1:0']);
+    });
+
+    it('returns undefined when the table is missing', () => {
+        expect(converseCacheModelIds('no table')).toBeUndefined();
     });
 });
 
@@ -240,5 +458,41 @@ describe('ModelCardStore', () => {
     it('throws when the index cannot be read', async () => {
         stubFetch([MODEL_CARD_INDEX_URL]);
         await expect(new ModelCardStore(memento()).refresh([LLAMA], 1_000)).rejects.toThrow('HTTP 404');
+    });
+
+    // User decision (2026-10-04): a page that fails keeps its last good copy; a card removed from the index is dropped.
+    it('keeps the previous copy of a page that fails, but drops cards no longer in the index', async () => {
+        const cards = new ModelCardStore(memento());
+        stubFetch();
+        await cards.refresh([LLAMA], 1_000);
+
+        stubFetch([modelCardUrl('model-card-meta-llama-3-3-70b-instruct')]);
+        await expect(cards.refresh([], 2_000, true)).resolves.toMatchObject({ failed: ['model-card-meta-llama-3-3-70b-instruct'] });
+        expect(cards.limits().get(LLAMA)).toMatchObject({ contextWindow: 128_000 });
+
+        const index = pages[MODEL_CARD_INDEX_URL];
+        pages[MODEL_CARD_INDEX_URL] = index.replace('model-card-meta-llama-3-3-70b-instruct.html', 'removed.html');
+        try {
+            stubFetch();
+            await cards.refresh([], 3_000, true);
+            expect(cards.limits().has(LLAMA)).toBe(false);
+        } finally {
+            pages[MODEL_CARD_INDEX_URL] = index;
+        }
+    });
+
+    it('ignores a cache written before pricing was parsed, and force downloads every card again', async () => {
+        const store = memento();
+        await store.update('modelCardCache', { checkedAt: 1_000, searched: [LLAMA], cards: { x: { card: 'x', runtimeIds: [LLAMA], textOutput: true } } });
+        const cards = new ModelCardStore(store);
+        expect(cards.limits().size).toBe(0);
+        expect(cards.needsRefresh([LLAMA], 2_000)).toBe(true);
+
+        const fetchMock = stubFetch();
+        await cards.refresh([LLAMA], 2_000);
+        fetchMock.mockClear();
+        await expect(cards.refresh([], 3_000, true)).resolves.toEqual({ fetched: 2, failed: [] });
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(cards.needsRefresh([LLAMA], 4_000)).toBe(false);
     });
 });

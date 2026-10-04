@@ -29,6 +29,10 @@ interface CatalogEntry {
     readonly thinking: ThinkingStyle;
     /** The model card states that bedrock-runtime (Converse) is unsupported; only Mantle is available. */
     readonly nativeUnsupported?: true;
+    /** Listed as supporting explicit Converse cachePoint in https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html. */
+    readonly promptCache?: true;
+    /** Input tokens above which the model card's long-context prices apply to the whole request. */
+    readonly longContextThreshold?: number;
 }
 
 const K = 1_000;
@@ -36,43 +40,47 @@ const M = 1_000_000;
 
 export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     // ── Anthropic ── Context, max output, and thinking formats come from each model card (accessed 2026-09-25).
+    // promptCache follows the explicit prompt caching table in prompt-caching.html (Converse `messages` checkpoints; check-model-cards compares it).
     'anthropic.claude-3-haiku-20240307-v1:0': { card: 'model-card-anthropic-claude-3-haiku', contextWindow: 200 * K, maxOutputTokens: 4 * K, thinking: 'none' },
-    'anthropic.claude-haiku-4-5-20251001-v1:0': { card: 'model-card-anthropic-claude-haiku-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
+    'anthropic.claude-haiku-4-5-20251001-v1:0': { card: 'model-card-anthropic-claude-haiku-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
     'anthropic.claude-sonnet-4-20250514-v1:0': { card: 'model-card-anthropic-claude-sonnet-4', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
-    'anthropic.claude-sonnet-4-5-20250929-v1:0': { card: 'model-card-anthropic-claude-sonnet-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
-    'anthropic.claude-sonnet-4-6': { card: 'model-card-anthropic-claude-sonnet-4-6', contextWindow: 1 * M, maxOutputTokens: 64 * K, thinking: 'adaptive' },
-    'anthropic.claude-sonnet-5': { card: 'model-card-anthropic-claude-sonnet-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
+    'anthropic.claude-sonnet-4-5-20250929-v1:0': { card: 'model-card-anthropic-claude-sonnet-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
+    'anthropic.claude-sonnet-4-6': { card: 'model-card-anthropic-claude-sonnet-4-6', contextWindow: 1 * M, maxOutputTokens: 64 * K, thinking: 'adaptive', promptCache: true },
+    'anthropic.claude-sonnet-5': { card: 'model-card-anthropic-claude-sonnet-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true },
     // Verified by the user on 2026-10-01: thinking cannot be turned off.
-    'anthropic.claude-sonnet-5-5': { card: 'model-card-anthropic-claude-sonnet-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways' },
+    'anthropic.claude-sonnet-5-5': { card: 'model-card-anthropic-claude-sonnet-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
     'anthropic.claude-opus-4-1-20250805-v1:0': { card: 'model-card-anthropic-claude-opus-4-1', contextWindow: 200 * K, maxOutputTokens: 32 * K, thinking: 'extended' },
-    'anthropic.claude-opus-4-5-20251101-v1:0': { card: 'model-card-anthropic-claude-opus-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
-    'anthropic.claude-opus-4-6-v1': { card: 'model-card-anthropic-claude-opus-4-6', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
-    'anthropic.claude-opus-4-7': { card: 'model-card-anthropic-claude-opus-4-7', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
-    'anthropic.claude-opus-4-8': { card: 'model-card-anthropic-claude-opus-4-8', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
-    'anthropic.claude-opus-5': { card: 'model-card-anthropic-claude-opus-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive' },
+    'anthropic.claude-opus-4-5-20251101-v1:0': { card: 'model-card-anthropic-claude-opus-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
+    'anthropic.claude-opus-4-6-v1': { card: 'model-card-anthropic-claude-opus-4-6', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true },
+    'anthropic.claude-opus-4-7': { card: 'model-card-anthropic-claude-opus-4-7', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true },
+    'anthropic.claude-opus-4-8': { card: 'model-card-anthropic-claude-opus-4-8', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true },
+    'anthropic.claude-opus-5': { card: 'model-card-anthropic-claude-opus-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true },
     // Model card: adaptive thinking is always on (`disabled` was verified to return ValidationException).
-    'anthropic.claude-opus-5-5': { card: 'model-card-anthropic-claude-opus-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways' },
-    'anthropic.claude-fable-5': { card: 'model-card-anthropic-claude-fable-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways' },
-    'anthropic.claude-fable-5-1': { card: 'model-card-anthropic-claude-fable-5-1', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways' },
+    'anthropic.claude-opus-5-5': { card: 'model-card-anthropic-claude-opus-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
+    'anthropic.claude-fable-5': { card: 'model-card-anthropic-claude-fable-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
+    'anthropic.claude-fable-5-1': { card: 'model-card-anthropic-claude-fable-5-1', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
     // No model card was found for Claude 3 Sonnet, so it is omitted from the catalog and uses conservative values with a log entry.
 
-    // ── OpenAI ── Limits come from each model card (rechecked 2026-10-01 with check-model-cards).
-    'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true },
-    'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true },
-    'openai.gpt-5.6-luna': { card: 'model-card-openai-gpt-56-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai' },
-    'openai.gpt-5.6-sol': { card: 'model-card-openai-gpt-56-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai' },
-    'openai.gpt-5.6-terra': { card: 'model-card-openai-gpt-56-terra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai' },
+    // ── OpenAI ── Limits come from each model card (rechecked 2026-10-04 with check-model-cards).
+    // longContextThreshold comes from each card's Pricing section ("more than 272K input tokens", checked 2026-10-04).
+    'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
+    'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
+    'openai.gpt-5.6-luna': { card: 'model-card-openai-gpt-56-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', longContextThreshold: 272_000 },
+    'openai.gpt-5.6-sol': { card: 'model-card-openai-gpt-56-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', longContextThreshold: 272_000 },
+    'openai.gpt-5.6-terra': { card: 'model-card-openai-gpt-56-terra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', longContextThreshold: 272_000 },
     // GPT-6 Astra was verified to reject `none` for reasoning.effort. Luna and Sol could not be tested due to missing permissions,
     // so they are also marked openaiNoNone: `off` maps to `low`, which is confirmed to work for Astra.
-    'openai.gpt-6-astra': { card: 'model-card-openai-gpt-6-astra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone' },
-    'openai.gpt-6-luna': { card: 'model-card-openai-gpt-6-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone' },
-    'openai.gpt-6-sol': { card: 'model-card-openai-gpt-6-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone' },
+    'openai.gpt-6-astra': { card: 'model-card-openai-gpt-6-astra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
+    'openai.gpt-6-luna': { card: 'model-card-openai-gpt-6-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
+    'openai.gpt-6-sol': { card: 'model-card-openai-gpt-6-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
+    // Verified 2026-10-04 with ConverseStream (us-west-2, us.openai.gpt-6.1-sol): baseline=ok, effort=low=ok, effort=none=ValidationException
+    'openai.gpt-6.1-sol': { card: 'model-card-openai-gpt-6-1-sol', contextWindow: 1_000_000, maxOutputTokens: 131_072, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
     // Verified 2026-10-01 with ConverseStream (us-west-2, bare model IDs): baseline, effort=low, and effort=none all succeeded.
     'openai.gpt-oss-120b-1:0': { card: 'model-card-openai-gpt-oss-120b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
     'openai.gpt-oss-20b-1:0': { card: 'model-card-openai-gpt-oss-20b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
     'openai.gpt-oss-safeguard-120b': { card: 'model-card-openai-gpt-oss-safeguard-120b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
     'openai.gpt-oss-safeguard-20b': { card: 'model-card-openai-gpt-oss-safeguard-20b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
-    // Not added (2026-10-01): Claude 3.5 Haiku returned end-of-life ResourceNotFoundException; Claude Mythos 5.1 and GPT-6.1 Sol could not be tested with the available profile.
+    // Not added (2026-10-04): Claude 3.5 Haiku returned end-of-life ResourceNotFoundException; Claude Mythos 5.1 is gated and returned "The provided model identifier is invalid" with the available profile.
 };
 
 /**
@@ -120,6 +128,10 @@ export interface ResolvedModel {
      * True when foundation-model data is unavailable (user decision): Bedrock rejects unsupported images with an explicit error.
      */
     readonly imageInput: boolean;
+    /** Whether the provider adds Converse cachePoint blocks; only true for catalog entries marked promptCache. */
+    readonly promptCache: boolean;
+    /** From the catalog, or the model card for models missing from it; undefined means no long-context pricing tier. */
+    readonly longContextThreshold?: number;
 }
 
 /** Token limits parsed from an AWS model card at runtime. */
@@ -128,6 +140,7 @@ export interface CardLimits {
     readonly contextWindow?: number;
     readonly maxOutputTokens?: number;
     readonly converse?: boolean;
+    readonly longContextThreshold?: number;
 }
 
 interface ResolveResult {
@@ -258,6 +271,8 @@ export function resolveModels(
             maxOutputTokens,
             thinking: entry?.thinking ?? 'none',
             imageInput: foundation?.imageInput ?? true,
+            promptCache: entry?.promptCache ?? false,
+            longContextThreshold: source?.longContextThreshold,
         });
     }
     models.sort((a, b) => a.baseId.localeCompare(b.baseId));

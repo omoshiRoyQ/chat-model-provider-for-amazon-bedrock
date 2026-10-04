@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import type { UsageView } from './usageView';
+import type { UsageRow, UsageView } from './usageView';
 
 /** Messages sent from the panel buttons to the extension. */
 type PanelMessage = { type: 'reset' } | { type: 'updatePrices' } | { type: 'showLogs' } | { type: 'openPricingSettings' };
@@ -81,6 +81,16 @@ const num = (n: number) => n.toLocaleString();
 const usd = (n: number) => `$${n.toFixed(4)}`;
 const date = (iso: string) => iso.replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, ' UTC');
 
+function renderCost(r: UsageRow): string {
+    const t = vscode.l10n.t;
+    if (r.cost !== undefined) {
+        const source = r.priceSource === 'custom' ? t('custom') : r.priceSource === 'modelCard' ? t('model card') : undefined;
+        return usd(r.cost) + (source ? `<div class="sub">${esc(source)}</div>` : '');
+    }
+    const missing = r.missingPrice === 'cachePrice' ? t('No cache price') : r.missingPrice === 'longContextPrice' ? t('No long-context price') : t('No price data');
+    return `<span class="sub">${esc(missing)}</span>`;
+}
+
 function renderHtml(view: UsageView, nonce: string, cspSource: string): string {
     const t = vscode.l10n.t;
     const rows = view.rows
@@ -90,12 +100,14 @@ function renderHtml(view: UsageView, nonce: string, cspSource: string): string {
   <td>${esc(r.route)}</td>
   <td class="n">${num(r.requests)}</td>
   <td class="n">${num(r.inputTokens)}</td>
+  <td class="n">${num(r.cacheReadTokens)}</td>
+  <td class="n">${num(r.cacheWriteTokens)}</td>
   <td class="n">${num(r.outputTokens)}</td>
-  <td class="n">${r.cost !== undefined ? usd(r.cost) + (r.priceSource === 'custom' ? ` <span class="sub">${esc(t('custom'))}</span>` : '') : `<span class="sub">${esc(t('No price data'))}</span>`}</td>
+  <td class="n">${renderCost(r)}</td>
 </tr>`,
         )
         .join('\n');
-    const empty = view.rows.length === 0 ? `<tr><td colspan="6" class="sub">${esc(t('No usage in this period yet.'))}</td></tr>` : '';
+    const empty = view.rows.length === 0 ? `<tr><td colspan="8" class="sub">${esc(t('No usage in this period yet.'))}</td></tr>` : '';
     const tableInfo = view.table
         ? esc(t('Price table: {0} (published {1}).', view.table.source, date(view.table.publicationDate)))
         : esc(t('No price table for region {0}. Click "Update Prices" to download it.', view.region));
@@ -111,6 +123,7 @@ function renderHtml(view: UsageView, nonce: string, cspSource: string): string {
   table { border-collapse: collapse; width: 100%; margin: 12px 0; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--vscode-panel-border); vertical-align: top; }
   th { font-weight: 600; }
+  th.g { text-align: center; }
   td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
   tfoot td { font-weight: 600; }
   .sub { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
@@ -126,15 +139,19 @@ function renderHtml(view: UsageView, nonce: string, cspSource: string): string {
 <span class="sub">${esc(t('Period: {0} → next reset {1}', date(view.periodStart), date(view.nextReset)))}${view.manualResetAt ? ' · ' + esc(t('manually reset at {0}', date(view.manualResetAt))) : ''}</span></p>
 <table>
 <thead><tr>
-  <th>${esc(t('Model'))}</th><th>${esc(t('Route'))}</th><th class="n">${esc(t('Requests'))}</th>
-  <th class="n">${esc(t('Input tokens'))}</th><th class="n">${esc(t('Output tokens'))}</th><th class="n">${esc(t('Estimated cost (USD)'))}</th>
+  <th rowspan="2">${esc(t('Model'))}</th><th rowspan="2">${esc(t('Route'))}</th><th rowspan="2" class="n">${esc(t('Requests'))}</th>
+  <th colspan="3" class="g">${esc(t('Input tokens'))}</th>
+  <th rowspan="2" class="n">${esc(t('Output tokens'))}</th><th rowspan="2" class="n">${esc(t('Estimated cost (USD)'))}</th>
+</tr><tr>
+  <th class="n">${esc(t('Input'))}</th><th class="n">${esc(t('Cache read'))}</th><th class="n">${esc(t('Cache write'))}</th>
 </tr></thead>
 <tbody>
 ${rows}${empty}
 </tbody>
 <tfoot><tr>
   <td>${esc(t('Total'))}</td><td></td><td class="n">${num(view.rows.reduce((s, r) => s + r.requests, 0))}</td>
-  <td class="n">${num(view.totalInput)}</td><td class="n">${num(view.totalOutput)}</td><td class="n">${usd(view.totalCost)}${costNote}</td>
+  <td class="n">${num(view.totalUncachedInput)}</td><td class="n">${num(view.totalCacheRead)}</td><td class="n">${num(view.totalCacheWrite)}</td>
+  <td class="n">${num(view.totalOutput)}</td><td class="n">${usd(view.totalCost)}${costNote}</td>
 </tr></tfoot>
 </table>
 <p class="sub">${tableInfo}<br>${esc(t('Estimates only. Actual charges are shown on your AWS bill.'))}</p>

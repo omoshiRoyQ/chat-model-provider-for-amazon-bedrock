@@ -11,8 +11,11 @@ import type { Document } from './convert';
 
 /** Token usage reported in Bedrock's final stream metadata event. */
 export interface TokenUsage {
+    /** Uncached input only; AWS prompt-caching docs: total input = inputTokens + cacheReadTokens + cacheWriteTokens. */
     readonly inputTokens: number;
     readonly outputTokens: number;
+    readonly cacheReadTokens: number;
+    readonly cacheWriteTokens: number;
 }
 
 /** Content reported to the caller while streaming. */
@@ -124,9 +127,14 @@ export class NativeConverseClient {
                     this.log.info(`model=${params.modelId} completed, stopReason=${event.messageStop.stopReason}`);
                 } else if (event.metadata?.usage) {
                     const u = event.metadata.usage;
-                    this.log.info(`model=${params.modelId} usage: input=${u.inputTokens}, output=${u.outputTokens}`);
+                    this.log.info(`model=${params.modelId} usage: ${JSON.stringify(u)}`);
                     if (u.inputTokens !== undefined && u.outputTokens !== undefined) {
-                        usage = { inputTokens: u.inputTokens, outputTokens: u.outputTokens };
+                        usage = {
+                            inputTokens: u.inputTokens,
+                            outputTokens: u.outputTokens,
+                            cacheReadTokens: u.cacheReadInputTokens ?? 0,
+                            cacheWriteTokens: u.cacheWriteInputTokens ?? 0,
+                        };
                     }
                 }
             }

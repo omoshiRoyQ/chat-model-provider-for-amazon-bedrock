@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { AmazonBedrockProvider } from '../src/provider';
 import type { ModelCardStore } from '../src/modelCardStore';
+import type { ResolvedModel } from '../src/models';
 import type { SsoSignIn } from '../src/signIn';
 import type { SignInStatusBar } from '../src/statusBar';
 
@@ -36,7 +37,7 @@ const settings = (profile: string) => ({
 describe('AmazonBedrockProvider usage attribution', () => {
     it('reports usage against the profile used when the request started', async () => {
         const profileAtStart = 'profile-a';
-        const usage = { inputTokens: 4, outputTokens: 2 };
+        const usage = { inputTokens: 4, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 };
         let finishRequest!: (value: typeof usage) => void;
         mocks.readSettings.mockReturnValue(settings(profileAtStart));
         mocks.stream.mockReturnValue(new Promise((resolve) => {
@@ -107,5 +108,41 @@ describe('AmazonBedrockProvider system messages', () => {
         expect(requests[2]).toMatchObject(asUser);
         expect(requests).toHaveLength(3);
         provider.dispose();
+    });
+});
+
+/** Cache placement is the user's design (2026-10-03); models are flagged from the AWS prompt-caching.html supported list. */
+describe('AmazonBedrockProvider prompt cache', () => {
+    const send = async (promptCache: boolean) => {
+        mocks.readSettings.mockReturnValue(settings('dev'));
+        mocks.stream.mockReset();
+        mocks.stream.mockResolvedValue(undefined);
+        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const signInBar = { show: vi.fn(), hide: vi.fn() } as unknown as SignInStatusBar;
+        const provider = new AmazonBedrockProvider(log, signInBar, {} as SsoSignIn, { thinkingEffort: () => 'default', onUsage: vi.fn() }, {} as ModelCardStore);
+        const id = 'us.anthropic.claude-sonnet-5-5';
+        const resolved: ResolvedModel = { invokeId: id, baseId: 'anthropic.claude-sonnet-5-5', name: 'Claude Sonnet 5.5', route: 'Geo', contextWindow: 1_000_000, maxOutputTokens: 128_000, thinking: 'none', imageInput: true, promptCache };
+        (provider as unknown as { modelsById: Map<string, ResolvedModel> }).modelsById = new Map([[id, resolved]]);
+        const model = { id, name: resolved.name, maxOutputTokens: 128_000, capabilities: {} } as vscode.LanguageModelChatInformation;
+        const messages = [
+            { role: 3 as vscode.LanguageModelChatMessageRole, content: [new vscode.LanguageModelTextPart('Be brief.')], name: undefined },
+            { role: vscode.LanguageModelChatMessageRole.User, content: [new vscode.LanguageModelTextPart('1+1=?')], name: undefined },
+        ];
+        const tool: vscode.LanguageModelChatTool = { name: 'read_file', description: 'read', inputSchema: undefined };
+        await provider.provideLanguageModelChatResponse(model, messages, { tools: [tool], toolMode: vscode.LanguageModelChatToolMode.Auto }, { report: vi.fn() }, { isCancellationRequested: false } as vscode.CancellationToken);
+        provider.dispose();
+        return mocks.stream.mock.calls[0][0];
+    };
+
+    it('promptCache 模型在 tools、system、最後一則 message 結尾加 cachePoint', async () => {
+        const request = await send(true);
+        const cachePoint = { cachePoint: { type: 'default' } };
+        expect(request.toolConfig.tools.at(-1)).toEqual(cachePoint);
+        expect(request.system).toEqual([{ text: 'Be brief.' }, cachePoint]);
+        expect(request.messages.at(-1).content).toEqual([{ text: '1+1=?' }, cachePoint]);
+    });
+
+    it('沒有 promptCache 的模型不加 cachePoint', async () => {
+        expect(JSON.stringify(await send(false))).not.toContain('cachePoint');
     });
 });

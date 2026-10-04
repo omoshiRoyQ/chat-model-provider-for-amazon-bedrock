@@ -1,5 +1,38 @@
-import { describe, expect, it } from 'vitest';
-import { parseToolInput } from '../src/native';
+import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
+import { describe, expect, it, vi } from 'vitest';
+import type * as vscode from 'vscode';
+import { NativeConverseClient, parseToolInput } from '../src/native';
+
+/**
+ * Usage values are the metadata.usage objects the user observed on 2026-10-03.
+ * Field meaning comes from AWS prompt-caching.html: total input = inputTokens + cacheReadInputTokens + cacheWriteInputTokens.
+ */
+describe('NativeConverseClient usage', () => {
+    async function usageOf(raw: Record<string, number>) {
+        const send = vi.spyOn(BedrockRuntimeClient.prototype, 'send').mockResolvedValue({
+            stream: (async function* () {
+                yield { metadata: { usage: raw } };
+            })(),
+        } as never);
+        const log = { info: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) } as unknown as vscode.CancellationToken;
+        try {
+            return await new NativeConverseClient(log).stream({ profile: 'p', region: 'us-west-2', modelId: 'm', messages: [], toolConfig: undefined }, () => undefined, token);
+        } finally {
+            send.mockRestore();
+        }
+    }
+
+    it('讀取 GPT-6.1 Sol 回傳的快取寫入 token', async () => {
+        const usage = await usageOf({ inputTokens: 2, outputTokens: 20, totalTokens: 19023, cacheReadInputTokens: 0, cacheWriteInputTokens: 19001 });
+        expect(usage).toEqual({ inputTokens: 2, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 19001 });
+    });
+
+    it('沒有快取欄位時（Claude Sonnet 5.5 實測）當 0', async () => {
+        const usage = await usageOf({ inputTokens: 32834, outputTokens: 23, totalTokens: 32857 });
+        expect(usage).toEqual({ inputTokens: 32834, outputTokens: 23, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    });
+});
 
 /**
  * Expected values come from the user's decision (2026-09-29): parse errors must not include the raw tool input,

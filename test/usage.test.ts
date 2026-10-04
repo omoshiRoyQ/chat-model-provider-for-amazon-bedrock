@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { addUsage, currentPeriodStart, nextResetAt, type UsagePeriod, UsageStore } from '../src/usage';
+import { addUsage, currentPeriodStart, isLongContext, nextResetAt, type UsagePeriod, UsageStore } from '../src/usage';
 
 /**
  * Expected values come from the user's reset rules (2026-09-26): choose a day from 1 to 31 and a UTC hour;
@@ -9,6 +9,7 @@ import { addUsage, currentPeriodStart, nextResetAt, type UsagePeriod, UsageStore
 
 const utc = (s: string) => new Date(`${s}Z`);
 const iso = (d: Date) => d.toISOString();
+const tokens = (inputTokens: number, outputTokens: number, cacheReadTokens = 0, cacheWriteTokens = 0) => ({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
 
 describe('currentPeriodStart / nextResetAt', () => {
     it('預設每月 1 號 00:00 UTC', () => {
@@ -46,11 +47,40 @@ describe('addUsage', () => {
     it('同一個 model ID 累加，Geo 與 Global 分開計', () => {
         const info = { name: 'Claude Opus 5.5', baseId: 'anthropic.claude-opus-5-5' };
         let p: UsagePeriod = { periodStart: 'x', models: {} };
-        p = addUsage(p, 'us.anthropic.claude-opus-5-5', { ...info, route: 'Geo' }, { inputTokens: 100, outputTokens: 10 });
-        p = addUsage(p, 'us.anthropic.claude-opus-5-5', { ...info, route: 'Geo' }, { inputTokens: 50, outputTokens: 5 });
-        p = addUsage(p, 'global.anthropic.claude-opus-5-5', { ...info, route: 'Global' }, { inputTokens: 1, outputTokens: 1 });
+        p = addUsage(p, 'us.anthropic.claude-opus-5-5', { ...info, route: 'Geo' }, tokens(100, 10));
+        p = addUsage(p, 'us.anthropic.claude-opus-5-5', { ...info, route: 'Geo' }, tokens(50, 5));
+        p = addUsage(p, 'global.anthropic.claude-opus-5-5', { ...info, route: 'Global' }, tokens(1, 1));
         expect(p.models['us.anthropic.claude-opus-5-5']).toMatchObject({ inputTokens: 150, outputTokens: 15, requests: 2 });
         expect(p.models['global.anthropic.claude-opus-5-5']).toMatchObject({ inputTokens: 1, requests: 1, route: 'Global' });
+    });
+
+    it('快取 token 分開累加；舊資料沒有快取欄位時當 0', () => {
+        // Usage values: GPT-6.1 Sol metadata.usage observed by the user on 2026-10-03.
+        const info = { name: 'GPT', baseId: 'openai.test', route: 'Geo' as const };
+        const legacy: UsagePeriod = { periodStart: 'x', models: { m: { ...info, inputTokens: 10, outputTokens: 1, requests: 1 } } };
+        const p = addUsage(legacy, 'm', info, tokens(2, 20, 0, 19001));
+        expect(p.models.m).toMatchObject({ inputTokens: 12, outputTokens: 21, cacheReadTokens: 0, cacheWriteTokens: 19001, requests: 2 });
+    });
+
+    it('long-context 請求同時計入總計與 longContext 子計；一般請求保留既有子計', () => {
+        const info = { name: 'GPT', baseId: 'openai.test', route: 'Geo' as const };
+        let p: UsagePeriod = { periodStart: 'x', models: {} };
+        p = addUsage(p, 'm', info, tokens(300_000, 10, 0, 0), true);
+        p = addUsage(p, 'm', info, tokens(100, 1));
+        expect(p.models.m).toMatchObject({ inputTokens: 300_100, outputTokens: 11, requests: 2 });
+        expect(p.models.m.longContext).toEqual({ inputTokens: 300_000, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 1 });
+    });
+});
+
+/**
+ * Threshold 272,000 comes from the GPT model cards ("more than 272K input tokens", 2026-10-04). Counting cache tokens toward it
+ * follows the AWS prompt-caching definition of total input; user decision (2026-10-04): overestimating beats underestimating.
+ */
+describe('isLongContext', () => {
+    it('總輸入（含快取讀取與寫入）超過門檻才算', () => {
+        expect(isLongContext(tokens(272_000, 0), 272_000)).toBe(false);
+        expect(isLongContext(tokens(1, 0, 200_000, 72_000), 272_000)).toBe(true);
+        expect(isLongContext(tokens(1_000_000, 0), undefined)).toBe(false);
     });
 });
 
@@ -70,7 +100,7 @@ describe('UsageStore reset schedule', () => {
         const modelId = 'global.anthropic.claude-opus-5-5';
         const info = { name: 'Claude Opus 5.5', baseId: 'anthropic.claude-opus-5-5', route: 'Global' as const };
 
-        await store.record(profile, modelId, info, { inputTokens: 120, outputTokens: 12 }, 1, 0, utc('2026-09-26T08:00:00'));
+        await store.record(profile, modelId, info, tokens(120, 12), 1, 0, utc('2026-09-26T08:00:00'));
         await store.configureResetSchedule(profile, 27, 1, utc('2026-09-27T00:09:10'));
 
         const beforeReset = store.get(profile, 27, 1, utc('2026-09-27T00:59:59'));
@@ -81,7 +111,7 @@ describe('UsageStore reset schedule', () => {
         expect(atReset.periodStart).toBe('2026-09-27T01:00:00.000Z');
         expect(atReset.models).toEqual({});
 
-        await store.record(profile, modelId, info, { inputTokens: 5, outputTokens: 2 }, 27, 1, utc('2026-09-27T01:00:01'));
+        await store.record(profile, modelId, info, tokens(5, 2), 27, 1, utc('2026-09-27T01:00:01'));
         const afterReset = store.get(profile, 27, 1, utc('2026-09-27T01:05:00'));
         expect(afterReset.models[modelId]).toMatchObject({ inputTokens: 5, outputTokens: 2, requests: 1 });
         expect(afterReset.resetSchedule?.nextResetAt).toBe('2026-10-27T01:00:00.000Z');
@@ -103,7 +133,7 @@ describe('UsageStore reset schedule', () => {
         const info = { name: 'Claude Opus 5.5', baseId: 'anthropic.claude-opus-5-5', route: 'Global' as const };
         const beforeReset = utc('2026-09-27T00:30:00');
 
-        await store.record(profile, modelId, info, { inputTokens: 10, outputTokens: 3 }, 27, 1, beforeReset);
+        await store.record(profile, modelId, info, tokens(10, 3), 27, 1, beforeReset);
         await store.reset(profile, 27, 1, beforeReset);
 
         const period = store.get(profile, 27, 1, beforeReset);
@@ -146,8 +176,8 @@ describe('UsageStore concurrent writes', () => {
         const now = utc('2026-09-27T00:30:00');
 
         await Promise.all([
-            store.record(profile, modelId, info, { inputTokens: 12, outputTokens: 1 }, 1, 0, now),
-            store.record(profile, modelId, info, { inputTokens: 23, outputTokens: 2 }, 1, 0, now),
+            store.record(profile, modelId, info, tokens(12, 1), 1, 0, now),
+            store.record(profile, modelId, info, tokens(23, 2), 1, 0, now),
         ]);
 
         expect(store.get(profile, 1, 0, now).models[modelId]).toMatchObject({ inputTokens: 135, outputTokens: 13, requests: 3 });

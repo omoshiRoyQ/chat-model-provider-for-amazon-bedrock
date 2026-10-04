@@ -81,6 +81,25 @@ function collectToolNames(messages: readonly Message[]): Set<string> {
     return names;
 }
 
+/** No ttl: Bedrock then uses the default 5-minute TTL (prompt-caching.html). */
+const CACHE_POINT = { type: 'default' } as const;
+
+/**
+ * Returns a copy with a cachePoint at the end of tools, system, and the last message (at most 3; Converse allows 4 per request).
+ * Bedrock processes cache points in tools → system → messages order, so each one caches the whole prefix before it.
+ * Only call for models that support explicit prompt caching; the input objects are not modified.
+ */
+export function addCachePoints<T extends { messages: Message[]; system?: SystemContentBlock[]; toolConfig?: ToolConfiguration }>(request: T): T {
+    const { messages, system, toolConfig } = request;
+    const last = messages[messages.length - 1];
+    return {
+        ...request,
+        toolConfig: toolConfig?.tools?.length ? { ...toolConfig, tools: [...toolConfig.tools, { cachePoint: CACHE_POINT }] } : toolConfig,
+        system: system?.length ? [...system, { cachePoint: CACHE_POINT }] : system,
+        messages: last ? [...messages.slice(0, -1), { ...last, content: [...(last.content ?? []), { cachePoint: CACHE_POINT }] }] : messages,
+    };
+}
+
 /**
  * VS Code's System role is only in the proposed languageModelSystem API; Copilot Chat sends its instructions with it
  * (log showed roles=3:1,1:2 on 2026-10-01).

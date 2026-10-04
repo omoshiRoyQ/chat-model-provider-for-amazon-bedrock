@@ -2,6 +2,8 @@ import type * as vscode from 'vscode';
 import { MODEL_CARD_INDEX_URL, modelCardNames, modelCardUrl, parseModelCard, type ModelCard } from './modelCards';
 
 interface CachedCards {
+    /** Cards parsed by an older version lack newer fields (such as pricing) and are fetched again. */
+    readonly version?: number;
     readonly checkedAt: number;
     /** Model IDs that were missing from the catalog when the cards were last fetched. */
     readonly searched: readonly string[];
@@ -9,6 +11,7 @@ interface CachedCards {
 }
 
 const KEY = 'modelCardCache';
+const VERSION = 2;
 /** Cached pages are fetched again after this age so later corrections in AWS documentation are picked up. */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const CONCURRENCY = 6;
@@ -23,7 +26,7 @@ async function fetchText(url: string): Promise<string> {
 }
 
 /**
- * Caches token limits from public AWS model-card pages for models missing from the built-in catalog.
+ * Caches token limits and prices from public AWS model-card pages.
  * Sends only HTTPS GET requests to fixed AWS documentation URLs, with no account information.
  */
 export class ModelCardStore {
@@ -32,7 +35,8 @@ export class ModelCardStore {
     constructor(private readonly memento: vscode.Memento) { }
 
     private cached(): CachedCards {
-        return this.memento.get<CachedCards>(KEY) ?? { checkedAt: 0, searched: [], cards: {} };
+        const cached = this.memento.get<CachedCards>(KEY);
+        return cached?.version === VERSION ? cached : { version: VERSION, checkedAt: 0, searched: [], cards: {} };
     }
 
     /** Cached cards keyed by foundation model ID. */
@@ -55,19 +59,19 @@ export class ModelCardStore {
     }
 
     /**
-     * Downloads the page index and every model card not cached yet. Throws if the index cannot be read.
-     * Pages that fail are skipped and the searched list is cleared, so the next model-list load tries again.
+     * Downloads the page index and every model card not cached yet; `force` downloads every card again (Update Prices).
+     * Throws if the index cannot be read. Pages that fail are skipped and the searched list is cleared, so the next model-list load tries again.
      */
-    refresh(unknownIds: readonly string[], now = Date.now()): Promise<{ fetched: number; failed: string[] }> {
-        this.inFlight ??= this.download(unknownIds, now).finally(() => {
+    refresh(unknownIds: readonly string[], now = Date.now(), force = false): Promise<{ fetched: number; failed: string[] }> {
+        this.inFlight ??= this.download(unknownIds, now, force).finally(() => {
             this.inFlight = undefined;
         });
         return this.inFlight;
     }
 
-    private async download(unknownIds: readonly string[], now: number): Promise<{ fetched: number; failed: string[] }> {
+    private async download(unknownIds: readonly string[], now: number, force: boolean): Promise<{ fetched: number; failed: string[] }> {
         const previous = this.cached();
-        const reusable = now - previous.checkedAt < MAX_AGE_MS ? previous.cards : {};
+        const reusable = !force && now - previous.checkedAt < MAX_AGE_MS ? previous.cards : {};
         const names = modelCardNames(await fetchText(MODEL_CARD_INDEX_URL));
         if (names.length === 0) {
             throw new Error(`No model cards were found in ${MODEL_CARD_INDEX_URL}`);
@@ -88,12 +92,17 @@ export class ModelCardStore {
                     cards[name] = parseModelCard(name, await fetchText(modelCardUrl(name)));
                 } catch {
                     failed.push(name);
+                    // Keep the last good copy so one failed page does not drop a model's price; cards removed from the index are not kept.
+                    if (previous.cards[name]) {
+                        cards[name] = previous.cards[name];
+                    }
                 }
             }
         }));
         await this.memento.update(KEY, {
+            version: VERSION,
             checkedAt: now,
-            searched: failed.length > 0 ? [] : [...unknownIds],
+            searched: failed.length > 0 ? [] : [...new Set([...previous.searched, ...unknownIds])],
             cards,
         } satisfies CachedCards);
         return { fetched: pending.length - failed.length, failed };

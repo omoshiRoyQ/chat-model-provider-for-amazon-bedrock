@@ -12,7 +12,8 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
 - Supports Claude, GPT, and other eligible models, with a filter for Claude and GPT or all eligible models.
 - Supports Chat Agent tool calling and image input for models that support it.
 - Lets you set thinking effort per model. Unsupported settings may be adjusted by the extension or rejected by Bedrock.
-- Shows this period's input and output tokens in the status bar, and per-model request counts, tokens, and estimated costs in the usage panel.
+- Shows this period's input and output tokens in the status bar, and per-model request counts, tokens (including prompt cache reads and writes), and estimated costs in the usage panel.
+- Uses Bedrock prompt caching for Claude models that support it, so repeated conversation context can be read from the cache.
 - Lets you update the price table, set custom prices, and configure the monthly usage reset day and UTC hour.
 
 ## Requirements
@@ -66,7 +67,7 @@ If the first command fails, the model list cannot be loaded. If only the second 
 - **Model Filter**: Show only Claude and GPT, or all eligible models.
 - **Inference Scope**: `geo` uses a geographic inference profile and hides models that offer only a global profile. `global` prefers a global profile, which may route requests to AWS Regions worldwide, and falls back to the geographic profile when a model has no global profile.
 - **Usage Reset Day / Hour**: Set the monthly reset day (1–31) and UTC hour (0–23). If a month does not have the selected day, usage resets on the month's last day. Changing the schedule does not immediately clear usage; it resets at the next reset time under the new schedule.
-- **Custom Pricing**: Set USD prices per million tokens by model ID. Custom prices take precedence over the downloaded price table. For example:
+- **Custom Pricing**: Set USD prices per million tokens by model ID. Custom prices take precedence over the downloaded price table. `cacheRead` and `cacheWrite` are optional prompt cache prices; without them, costs for requests that read or write the prompt cache are not estimated. For example:
 
   ```json
   {
@@ -79,7 +80,11 @@ If the first command fails, the model list cannot be loaded. If only the second 
 
 ## Usage and Costs
 
-Input and output token usage reported by Bedrock is accumulated by AWS profile, model, and inference route. Costs are estimates, not AWS billing data; actual charges are shown on your AWS bill. Models without public AWS pricing, such as GPT, require custom prices for cost estimates.
+Input and output token usage reported by Bedrock is accumulated by AWS profile, model, and inference route. Costs are estimates, not AWS billing data; actual charges are shown on your AWS bill. **Update Prices** downloads the public AWS price list and the price tables on AWS model cards. Prices come from your custom prices first, then the price list, then the model cards, so GPT models missing from the price list are still estimated; the cost column marks model card prices with **model card**. Models without any of these prices show **No price data**.
+
+Some GPT models charge long-context prices for the whole request when its input exceeds 272K tokens (as stated on their model cards). The extension classifies each request when it is recorded, counting cache reads and writes as input, and prices those requests with the long-context rates. Usage recorded before this version is priced at standard rates. Custom prices have no long-context tier, so a model with long-context requests and only custom prices shows **No long-context price**.
+
+For Claude models listed as supporting prompt caching in the [AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), the extension adds cache points after the tool definitions, the system prompt, and the latest message. Other models, such as GPT, may still report cache reads or writes on their own. In the usage panel, **Input tokens** is split into **Input** (uncached), **Cache read**, and **Cache write**; the three add up to the total input, which the status bar shows. Cache reads and writes are priced separately. Cache prices come from the price list or the model cards (GPT cache writes use the 30-minute rate); if you downloaded prices with an earlier version, select **Update Prices** again. When a model has cache tokens but no cache price, its cost shows **No cache price** and is excluded from the total.
 
 The status bar shows this period's input and output tokens. Select the token totals to open the usage panel, where you can update prices, open custom pricing settings, or reset usage.
 
@@ -91,7 +96,7 @@ This extension does not implement or send telemetry, and it does not send analyt
 
 1. Amazon Bedrock in the selected region, through your AWS profile (loading the model list and streaming chat).
 2. An HTTPS GET request to the public AWS price file when you select **Update Prices**. The request contains no account information or credentials.
-3. HTTPS GET requests to public AWS model card pages (docs.aws.amazon.com) when your model list includes a model missing from the built-in list, to read its context window and maximum output tokens. Models already looked up are not requested again until the cached data is older than 7 days. The requests contain no account information or credentials.
+3. HTTPS GET requests to public AWS model card pages (docs.aws.amazon.com) to read context windows, maximum output tokens, and prices: in the background when your model list includes a model missing from the built-in list (cached for 7 days), and for every model card when you select **Update Prices**. The requests contain no account information or credentials.
 
 When you select the sign-in button, the extension starts AWS CLI `aws sso login` locally, and AWS CLI opens your browser to complete sign-in (for example, to choose an account and approve access). The extension never starts sign-in automatically in the background.
 
@@ -108,10 +113,11 @@ VS Code's own telemetry follows the VS Code `telemetry.telemetryLevel` setting a
 - Chat messages, tool results, and attachments are sent only to Amazon Bedrock in your own AWS account, governed by your IAM permissions, your AWS bill, and the AWS terms.
 - According to AWS documentation, model providers have no access to Amazon Bedrock customer prompts and completions. See [Amazon Bedrock Data protection](https://docs.aws.amazon.com/bedrock/latest/userguide/data-protection.html).
 - With the `global` inference scope, requests may be routed to AWS regions worldwide. Use `geo` if you have data residency requirements.
+- For Claude models that support prompt caching, Bedrock keeps the cached prompt prefix for 5 minutes (the default TTL) so later requests can reuse it.
 
 ### Local Storage
 
-- VS Code `globalState` stores only usage totals (profile name, model ID, token and request counts), per-model thinking settings, downloaded price tables, and token limits read from AWS model cards. This data is not synced to other devices. Reset usage totals from the usage panel and thinking settings with **Set Thinking Effort**; downloaded price tables are replaced when you select **Update Prices**.
+- VS Code `globalState` stores only usage totals (profile name, model ID, token and request counts), per-model thinking settings, downloaded price tables, and token limits and prices read from AWS model cards. This data is not synced to other devices. Reset usage totals from the usage panel and thinking settings with **Set Thinking Effort**; downloaded price tables are replaced when you select **Update Prices**.
 - The extension does not write chat content to local storage or logs.
 
 ### Logs

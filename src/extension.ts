@@ -8,7 +8,7 @@ import { SsoSignIn } from './signIn';
 import { effortLabel, SignInStatusBar, ThinkingStatusBar, TokenStatusBar } from './statusBar';
 import { THINKING_EFFORTS } from './thinking';
 import { ThinkingStore } from './thinkingStore';
-import { nextResetAt, UsageStore } from './usage';
+import { isLongContext, nextResetAt, UsageStore } from './usage';
 import { UsagePanel } from './usagePanel';
 import { buildUsageView } from './usageView';
 
@@ -33,6 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const usageStore = new UsageStore(context.globalState);
     const priceStore = new PriceStore(context.globalState);
     const thinkingStore = new ThinkingStore(context.globalState);
+    const modelCards = new ModelCardStore(context.globalState);
     const tokenBar = new TokenStatusBar();
     const thinkingBar = new ThinkingStatusBar();
     const signInBar = new SignInStatusBar();
@@ -43,17 +44,22 @@ export function activate(context: vscode.ExtensionContext): void {
         onUsage: (profile, resolved, id, name, usage) => {
             const s = readSettings();
             const baseId = resolved?.baseId ?? id.replace(/^[a-z]+\.(?=[a-z]+\.)/, '');
+            const longContext = isLongContext(usage, resolved?.longContextThreshold);
+            if (longContext) {
+                const total = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+                log.info(`model=${id} long-context request: total input ${total} > threshold ${resolved?.longContextThreshold}`);
+            }
             void usageStore
-                .record(profile, id, { name, baseId, route: routeOf(id, resolved) }, usage, s.usageResetDay, s.usageResetHour)
+                .record(profile, id, { name, baseId, route: routeOf(id, resolved) }, usage, s.usageResetDay, s.usageResetHour, new Date(), longContext)
                 .then(refresh);
         },
-    }, new ModelCardStore(context.globalState));
+    }, modelCards);
 
     const currentView = () => {
         const s = readSettings();
         const region = provider.region;
         const period = usageStore.get(s.profile, s.usageResetDay, s.usageResetHour);
-        return buildUsageView(s.profile, region, period, nextResetAt(new Date(), s.usageResetDay, s.usageResetHour), region ? priceStore.get(region) : undefined, s.customPricing);
+        return buildUsageView(s.profile, region, period, nextResetAt(new Date(), s.usageResetDay, s.usageResetHour), region ? priceStore.get(region) : undefined, s.customPricing, modelCards.limits());
     };
 
     const panel = new UsagePanel({
@@ -77,21 +83,29 @@ export function activate(context: vscode.ExtensionContext): void {
                 void vscode.window.showWarningMessage(vscode.l10n.t('The region is not known yet. Open the Chat model picker once so the model list is loaded, then try again.'));
                 return;
             }
-            try {
-                const table = await vscode.window.withProgress(
-                    { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Downloading Amazon Bedrock prices for {0}…', region) },
-                    () => priceStore.download(region),
-                );
+            // Model-card prices cover models missing from the price file (most GPT models as of 2026-10-04).
+            const [tableResult, cardResult] = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Downloading Amazon Bedrock prices for {0}…', region) },
+                () => Promise.allSettled([priceStore.download(region), modelCards.refresh([], Date.now(), true)]),
+            );
+            if (cardResult.status === 'fulfilled') {
+                const { fetched, failed } = cardResult.value;
+                log.info(`Model cards updated for pricing: fetched=${fetched}${failed.length > 0 ? `, failed=${failed.join(', ')}` : ''}`);
+            } else {
+                log.warn(`Could not update model-card prices: ${(cardResult.reason as Error).message}`);
+            }
+            if (tableResult.status === 'fulfilled') {
+                const table = tableResult.value;
                 log.info(`Updated price table: region=${region}, models=${Object.keys(table.models).length}, publicationDate=${table.publicationDate}`);
                 void vscode.window.showInformationMessage(
                     vscode.l10n.t('Prices updated: {0} models (published {1}).', Object.keys(table.models).length, table.publicationDate),
                 );
-                refresh();
-            } catch (error) {
-                const message = (error as Error).message;
+            } else {
+                const message = (tableResult.reason as Error).message;
                 log.error(`Failed to update price table: ${message}`);
                 void vscode.window.showErrorMessage(vscode.l10n.t('Could not update prices: {0}', message));
             }
+            refresh();
         },
         showLogs: () => log.show(),
         openPricingSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', `${CONFIG_SECTION}.customPricing`),

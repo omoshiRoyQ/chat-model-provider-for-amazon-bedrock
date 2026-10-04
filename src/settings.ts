@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { InferenceScope } from './models';
-import type { CustomPrices } from './pricing';
+import type { CustomPrices, ModelPrice } from './pricing';
 
 /** Values for `amazonBedrockProvider.modelFilter`. */
 export type ModelFilter = 'claudeAndGpt' | 'all';
@@ -45,17 +45,31 @@ function clampInt(value: number | undefined, min: number, max: number, fallback:
     return value;
 }
 
-/** Keeps only entries with non-negative numeric input and output values; ignores malformed entries. */
-function readCustomPricing(value: unknown): CustomPrices {
-    const result: Record<string, { inputPerM: number; outputPerM: number }> = {};
+const isPrice = (v: unknown): v is number => typeof v === 'number' && v >= 0;
+
+/**
+ * Keeps only entries with non-negative numeric input and output values, and optional cacheRead and cacheWrite values
+ * that are non-negative numbers when present; ignores malformed entries.
+ */
+export function readCustomPricing(value: unknown): CustomPrices {
+    const result: Record<string, ModelPrice> = {};
     if (!value || typeof value !== 'object') {
         return result;
     }
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-        const e = entry as { input?: unknown; output?: unknown } | null;
-        if (e && typeof e.input === 'number' && typeof e.output === 'number' && e.input >= 0 && e.output >= 0) {
-            result[key] = { inputPerM: e.input, outputPerM: e.output };
+        const e = entry as { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown } | null;
+        if (!e || !isPrice(e.input) || !isPrice(e.output)) {
+            continue;
         }
+        if ((e.cacheRead !== undefined && !isPrice(e.cacheRead)) || (e.cacheWrite !== undefined && !isPrice(e.cacheWrite))) {
+            continue;
+        }
+        result[key] = {
+            inputPerM: e.input,
+            outputPerM: e.output,
+            ...(e.cacheRead !== undefined ? { cacheReadPerM: e.cacheRead } : {}),
+            ...(e.cacheWrite !== undefined ? { cacheWritePerM: e.cacheWrite } : {}),
+        };
     }
     return result;
 }
