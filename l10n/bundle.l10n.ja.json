@@ -49,6 +49,7 @@
     "No cache price": "キャッシュ価格なし",
     "No long-context price": "ロングコンテキスト価格なし",
     "model card": "モデルカード",
+    "price table": "価格表",
     "Estimated cost (USD)": "推定費用（米ドル）",
     "Total": "合計",
     "Estimates only. Actual charges are shown on your AWS bill.": "あくまで推定です。実際の料金は AWS の請求書をご確認ください。",

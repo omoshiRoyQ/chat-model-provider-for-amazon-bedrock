@@ -4,3 +4,4 @@ dist/
 package-lock.json
 yarn.lock
 .vscode/settings.json
+.project/progress.md

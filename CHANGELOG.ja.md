@@ -2,6 +2,10 @@
 
 [EN](CHANGELOG.md) | [TW](CHANGELOG.zh-tw.md)
 
+## 1.2.1（2026-10-06）
+
+- 使用量パネルの推定費用に、独自価格、AWS 価格表、モデルカードのどの価格ソースを使ったか表示するようになりました。
+
 ## 1.2.0（2026-10-04）
 
 - [AWS ドキュメント](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)でプロンプトキャッシュ対応とされている Claude モデルで Bedrock の prompt caching を使用するようになりました。tool 定義、システムプロンプト、最新メッセージの末尾に cache point を追加し、既定の 5 分の TTL を使用します。

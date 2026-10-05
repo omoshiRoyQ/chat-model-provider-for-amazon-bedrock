@@ -2,6 +2,10 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
 
+## 1.2.1 (2026-10-06)
+
+- Estimated costs in the usage panel now show whether the price came from custom settings, an AWS price table, or a model card.
+
 ## 1.2.0 (2026-10-04)
 
 - Claude models listed as supporting prompt caching in the [AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) now use Bedrock prompt caching: cache points are added after the tool definitions, the system prompt, and the latest message, with the default 5-minute TTL.

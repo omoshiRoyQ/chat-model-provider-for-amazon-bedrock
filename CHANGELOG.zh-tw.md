@@ -2,6 +2,10 @@
 
 [EN](CHANGELOG.md) | [JP](CHANGELOG.ja.md)
 
+## 1.2.1（2026-10-06）
+
+- 使用量面板的估算費用現在會標示價格來源：自訂價格、AWS 價格表或 model card。
+
 ## 1.2.0（2026-10-04）
 
 - [AWS 文件](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)列為支援 prompt caching 的 Claude 模型改用 Bedrock prompt caching：在工具定義、system prompt 與最新一則訊息的結尾加上 cache point，使用預設的 5 分鐘 TTL。

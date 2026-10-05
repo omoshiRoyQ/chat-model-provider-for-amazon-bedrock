@@ -81,10 +81,21 @@ const num = (n: number) => n.toLocaleString();
 const usd = (n: number) => `$${n.toFixed(4)}`;
 const date = (iso: string) => iso.replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, ' UTC');
 
-function renderCost(r: UsageRow): string {
+export function renderCost(r: UsageRow): string {
     const t = vscode.l10n.t;
     if (r.cost !== undefined) {
-        const source = r.priceSource === 'custom' ? t('custom') : r.priceSource === 'modelCard' ? t('model card') : undefined;
+        let source: string | undefined;
+        switch (r.priceSource) {
+            case 'custom':
+                source = t('custom');
+                break;
+            case 'modelCard':
+                source = t('model card');
+                break;
+            case 'table':
+                source = t('price table');
+                break;
+        }
         return usd(r.cost) + (source ? `<div class="sub">${esc(source)}</div>` : '');
     }
     const missing = r.missingPrice === 'cachePrice' ? t('No cache price') : r.missingPrice === 'longContextPrice' ? t('No long-context price') : t('No price data');

@@ -49,6 +49,7 @@
     "No cache price": "沒有快取價格",
     "No long-context price": "沒有長 context 價格",
     "model card": "model card",
+    "price table": "價格表",
     "Estimated cost (USD)": "估算費用（美元）",
     "Total": "總計",
     "Estimates only. Actual charges are shown on your AWS bill.": "僅供估算，實際費用以 AWS 帳單為準。",
