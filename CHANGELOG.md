@@ -2,6 +2,10 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
 
+## 1.3.0 (2026-10-09)
+
+- Added Claude Haiku 5.5 to the built-in list. Requests whose input exceeds 100K tokens, counting cache reads and writes, are priced at its long-context rates for the whole request, as stated on Anthropic's pricing page. Only usage recorded from this version on is classified.
+
 ## 1.2.1 (2026-10-06)
 
 - Estimated costs in the usage panel now show whether the price came from custom settings, an AWS price table, or a model card.

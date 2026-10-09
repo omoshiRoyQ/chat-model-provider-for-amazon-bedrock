@@ -137,6 +137,13 @@ describe('resolveModels', () => {
         expect(r.models.find((m) => m.baseId === OPUS_55)?.longContextThreshold).toBeUndefined();
     });
 
+    it('Claude Haiku 5.5 的 longContextThreshold 為 100K', () => {
+        // 100,000 from Anthropic's pricing page ("prompts over 100,000 tokens", 2026-10-09); AWS price file lists `_long_ctx` prices for the model.
+        const haiku = 'anthropic.claude-haiku-5-5';
+        const r = resolveModels([profile(`us.${haiku}`)], [foundation(haiku, 'Claude Haiku 5.5')], 'geo', true);
+        expect(r.models.find((m) => m.baseId === haiku)).toMatchObject({ longContextThreshold: 100_000, contextWindow: 1_000_000, maxOutputTokens: 128_000, promptCache: true });
+    });
+
     it('imageInput 依 foundation model 的 inputModalities', () => {
         const r = resolveModels(profiles, foundations, 'geo', false);
         expect(r.models.find((m) => m.baseId === OPUS_55)?.imageInput).toBe(true);

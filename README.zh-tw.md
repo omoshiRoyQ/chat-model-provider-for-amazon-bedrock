@@ -82,7 +82,7 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 
 Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route 累計。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。按下 **更新價格** 會下載 AWS 公開價格表，以及 AWS model card 上的價格表。單價依序取自自訂價格、公開價格表、model card，所以公開價格表沒有的 GPT 模型也能估算費用；費用欄會以 **model card** 標示來自 model card 的價格。三者都沒有價格的模型會顯示 **無價格資料**。
 
-部分 GPT 模型在單一請求的輸入超過 272K token 時，整個請求都改用長 context 價格（依各自的 model card）。Extension 會在記錄每個請求時判斷是否超過，快取讀取與寫入也算在輸入內，超過的請求用長 context 單價計算。這個版本之前記錄的使用量一律用一般單價計算。自訂價格沒有長 context 分級，模型有長 context 請求且只有自訂價格時，費用欄會顯示 **沒有長 context 價格**。
+部分 GPT 模型在單一請求的輸入超過 272K token 時，整個請求都改用長 context 價格（依各自的 model card）；Claude Haiku 5.5 超過 100K token 時也一樣（依 Anthropic 價格頁，AWS 的 model card 沒有標示門檻）。Extension 會在記錄每個請求時判斷是否超過，快取讀取與寫入也算在輸入內，超過的請求用長 context 單價計算。這個版本之前記錄的使用量一律用一般單價計算。自訂價格沒有長 context 分級，模型有長 context 請求且只有自訂價格時，費用欄會顯示 **沒有長 context 價格**。
 
 [AWS 文件](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)列為支援 prompt caching 的 Claude 模型，extension 會在工具定義、system prompt 與最新一則訊息的結尾加上 cache point。GPT 等其他模型也可能自行回報快取讀取或寫入。使用量面板的 **輸入 token** 分成 **輸入**（未快取）、**快取讀取**、**快取寫入**三欄，相加就是總輸入，狀態列顯示的是這個總數。快取讀取與寫入分別計價。快取單價來自公開價格表或 model card（GPT 的快取寫入用 30 分鐘的單價）；如果價格是用舊版下載的，請再按一次 **更新價格**。模型有快取 token 但沒有快取單價時，費用欄會顯示 **沒有快取價格**，不計入總計。
 

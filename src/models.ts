@@ -3,7 +3,7 @@
  *
  * Token limits must have a source (AWS documentation or API response) cited here; never infer them from a model name.
  * ListInferenceProfiles and ListFoundationModels do not return token limits, so all values come from AWS model cards:
- * https://docs.aws.amazon.com/bedrock/latest/userguide/<card>.html (accessed 2026-09-25).
+ * https://docs.aws.amazon.com/bedrock/latest/userguide/<card>.html (accessed 2026-10-09).
  * The catalog is keyed by foundation model ID without an inference-profile prefix.
  * Models missing from the catalog use limits from model cards fetched at runtime (modelCardStore.ts), then conservative values.
  */
@@ -39,10 +39,14 @@ const K = 1_000;
 const M = 1_000_000;
 
 export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
-    // ── Anthropic ── Context, max output, and thinking formats come from each model card (accessed 2026-09-25).
+    // ?? Anthropic ?? Context, max output, and thinking formats come from each model card (accessed 2026-10-09).
     // promptCache follows the explicit prompt caching table in prompt-caching.html (Converse `messages` checkpoints; check-model-cards compares it).
     'anthropic.claude-3-haiku-20240307-v1:0': { card: 'model-card-anthropic-claude-3-haiku', contextWindow: 200 * K, maxOutputTokens: 4 * K, thinking: 'none' },
     'anthropic.claude-haiku-4-5-20251001-v1:0': { card: 'model-card-anthropic-claude-haiku-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
+    // Haiku 5.5: verified 2026-10-09 with ConverseStream (us-west-2, us.anthropic.claude-haiku-5-5): baseline=ok, adaptive=ok, disabled=ok.
+    // longContextThreshold: the AWS card has no threshold, but the AWS price file has `_long_ctx` prices; Anthropic's pricing page says
+    // "prompts over 100,000 tokens" (all input tokens, including cache reads and writes), the only Claude model with a long-context tier.
+    'anthropic.claude-haiku-5-5': { card: 'model-card-anthropic-claude-haiku-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true, longContextThreshold: 100 * K },
     'anthropic.claude-sonnet-4-20250514-v1:0': { card: 'model-card-anthropic-claude-sonnet-4', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
     'anthropic.claude-sonnet-4-5-20250929-v1:0': { card: 'model-card-anthropic-claude-sonnet-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
     'anthropic.claude-sonnet-4-6': { card: 'model-card-anthropic-claude-sonnet-4-6', contextWindow: 1 * M, maxOutputTokens: 64 * K, thinking: 'adaptive', promptCache: true },
@@ -61,7 +65,7 @@ export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     'anthropic.claude-fable-5-1': { card: 'model-card-anthropic-claude-fable-5-1', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
     // No model card was found for Claude 3 Sonnet, so it is omitted from the catalog and uses conservative values with a log entry.
 
-    // ── OpenAI ── Limits come from each model card (rechecked 2026-10-04 with check-model-cards).
+    // ?? OpenAI ?? Limits come from each model card (rechecked 2026-10-04 with check-model-cards).
     // longContextThreshold comes from each card's Pricing section ("more than 272K input tokens", checked 2026-10-04).
     'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
     'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },

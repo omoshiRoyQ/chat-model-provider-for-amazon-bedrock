@@ -124,7 +124,7 @@ export function describeError(error: unknown, modelId: string, path: CallPath, p
         return vscode.l10n.t(
             'Your AWS role cannot use this model because it lacks AWS Marketplace subscription permissions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe). Ask your AWS administrator to subscribe to the model or grant these permissions. ({0}) {1}',
             detail,
-            e.message,
+            redactAwsIdentity(e.message),
         );
     }
     if (isCredentialError(error)) {
@@ -132,8 +132,8 @@ export function describeError(error: unknown, modelId: string, path: CallPath, p
             'AWS credentials for profile "{0}" are expired or invalid. Select "Sign in", or run `aws sso login --profile {0}` in a terminal, then try again. ({1}) {2}',
             profile,
             detail,
-            e.message ?? '',
+            redactAwsIdentity(e.message ?? ''),
         );
     }
-    return vscode.l10n.t('Amazon Bedrock request failed. ({0}) {1}', detail, e.message ?? String(error));
+    return vscode.l10n.t('Amazon Bedrock request failed. ({0}) {1}', detail, redactAwsIdentity(e.message ?? String(error)));
 }

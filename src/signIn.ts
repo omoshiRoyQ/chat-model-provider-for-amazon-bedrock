@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
 import * as vscode from 'vscode';
 import { redactAwsIdentity } from './errors';
 
@@ -44,7 +45,8 @@ export class SsoSignIn {
                 (_progress, token) =>
                     new Promise<boolean>((resolve) => {
                         this.log.info(`Running aws sso login --profile ${profile}`);
-                        const child = spawn('aws', ['sso', 'login', '--profile', profile], { shell: false, windowsHide: true });
+                        // On Windows, spawn looks for aws.exe in the cwd before PATH (verified with Node 24.19); use the home directory so a project folder is never searched.
+                        const child = spawn('aws', ['sso', 'login', '--profile', profile], { shell: false, windowsHide: true, cwd: homedir() });
                         const forward = (chunk: Buffer) => {
                             for (const line of chunk.toString('utf8').split(/\r?\n/)) {
                                 if (line.trim()) {

@@ -158,8 +158,10 @@ for (const [id, entry] of catalog) {
     } else if (!entry.nativeUnsupported && !onRuntime) {
         idMismatch.push(`${id}：${card.card} 的 bedrock-runtime ID 是 ${card.runtimeIds.join('、')}`);
     }
-    if (card.contextWindow !== entry.contextWindow || card.maxOutputTokens !== entry.maxOutputTokens || card.longContextThreshold !== entry.longContextThreshold) {
-        limitMismatch.push(`${id}：CATALOG ${limits(entry)}；${card.card} ${limits(card)}\n      改成：${entryLine(id, { ...entry, contextWindow: card.contextWindow, maxOutputTokens: card.maxOutputTokens, longContextThreshold: card.longContextThreshold })}`);
+    // A card without a threshold is not a mismatch: Haiku 5.5's 100K comes from Anthropic's pricing page (see pricing.instructions.md).
+    const threshold = card.longContextThreshold ?? entry.longContextThreshold;
+    if (card.contextWindow !== entry.contextWindow || card.maxOutputTokens !== entry.maxOutputTokens || threshold !== entry.longContextThreshold) {
+        limitMismatch.push(`${id}：CATALOG ${limits(entry)}；${card.card} ${limits(card)}\n      改成：${entryLine(id, { ...entry, contextWindow: card.contextWindow, maxOutputTokens: card.maxOutputTokens, longContextThreshold: threshold })}`);
     }
 }
 const otherVendors = cards.filter((c) => c.textOutput && c.runtimeIds.length > 0 && !c.runtimeIds.some(isClaudeOrGpt));

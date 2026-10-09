@@ -2,6 +2,10 @@
 
 [EN](CHANGELOG.md) | [JP](CHANGELOG.ja.md)
 
+## 1.3.0（2026-10-09）
+
+- 內建清單加入 Claude Haiku 5.5。輸入（含快取讀取與寫入）超過 100K token 的請求，依 Anthropic 價格頁的說明整個請求改用長 context 單價計算。只有這個版本之後記錄的使用量會分類。
+
 ## 1.2.1（2026-10-06）
 
 - 使用量面板的估算費用現在會標示價格來源：自訂價格、AWS 價格表或 model card。

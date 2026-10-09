@@ -3,6 +3,7 @@ import type * as vscode from 'vscode';
 import { PriceStore } from '../src/priceStore';
 import { estimateCost, estimateModelCost, lookupPrice, parseOffer, priceUrl, type PriceTable } from '../src/pricing';
 import { buildUsageView } from '../src/usageView';
+import { addUsage, isLongContext, type UsagePeriod } from '../src/usage';
 import { readCustomPricing } from '../src/settings';
 
 /**
@@ -324,3 +325,63 @@ describe('buildUsageView', () => {
         expect(view.rows.find((r) => r.invokeId === 'custom')).toMatchObject({ priceSource: 'custom', cost: undefined, missingPrice: 'longContextPrice' });
     });
 });
+
+describe('Claude Haiku 5.5 long-context pricing', () => {
+    // Rows from the us-west-2 price file, downloaded 2026-10-09. Global prices match Anthropic's pricing page:
+    // up to 100,000 prompt tokens input $0.10 / output $0.50 / cache read $0.01 / 5m cache write $0.125;
+    // over 100,000 tokens input $0.50 / output $2.50 / cache read $0.05 / 5m cache write $0.625 (per 1M tokens). Geo is 10% higher.
+    const rows: [string, string][] = [
+        ['input_tokens_standard', '0.11'], ['output_tokens_standard', '0.55'], ['cache_read_tokens_standard', '0.011'], ['cache_write_tokens_standard', '0.1375'],
+        ['input_tokens_long_ctx_standard', '0.55'], ['output_tokens_long_ctx_standard', '2.75'], ['cache_read_tokens_long_ctx_standard', '0.055'], ['cache_write_tokens_long_ctx_standard', '0.6875'],
+        ['input_tokens_global_standard', '0.1'], ['output_tokens_global_standard', '0.5'], ['cache_read_tokens_global_standard', '0.01'], ['cache_write_tokens_global_standard', '0.125'],
+        ['input_tokens_long_ctx_global_standard', '0.5'], ['output_tokens_long_ctx_global_standard', '2.5'], ['cache_read_tokens_long_ctx_global_standard', '0.05'], ['cache_write_tokens_long_ctx_global_standard', '0.625'],
+        // 1-hour cache writes must be skipped, including their long-context rows.
+        ['cache_write_tokens_1h_standard', '0.22'], ['cache_write_tokens_1h_long_ctx_standard', '1.1'],
+        ['cache_write_tokens_1h_global_standard', '0.2'], ['cache_write_tokens_1h_long_ctx_global_standard', '1'],
+    ];
+    const haikuItems = rows.map(([usage, usd], i) => product(`k${i}`, 'Claude Haiku 5.5 (Amazon Bedrock Edition)', `USW2-MP:USW2_${usage}-Units`, usd));
+    const table = parseOffer(
+        { publicationDate: '2026-10-09T00:00:00Z', products: Object.fromEntries(haikuItems.map((i) => i.product)), terms: { OnDemand: Object.fromEntries(haikuItems.map((i) => i.term)) } },
+        'us-west-2',
+        'test',
+    );
+
+    it('解析 Geo 與 Global 的標準分項和 long-context 分項，略過 1h 快取寫入', () => {
+        expect(table.models['Claude Haiku 5.5']).toEqual({
+            geo: {
+                inputPerM: 0.11, outputPerM: 0.55, cacheReadPerM: 0.011, cacheWritePerM: 0.1375,
+                longContext: { inputPerM: 0.55, outputPerM: 2.75, cacheReadPerM: 0.055, cacheWritePerM: 0.6875 },
+            },
+            global: {
+                inputPerM: 0.1, outputPerM: 0.5, cacheReadPerM: 0.01, cacheWritePerM: 0.125,
+                longContext: { inputPerM: 0.5, outputPerM: 2.5, cacheReadPerM: 0.05, cacheWritePerM: 0.625 },
+            },
+        });
+    });
+
+    it('記錄使用量到計費：超過 100K 的請求整筆用長 context 單價，剛好 100K 不算', () => {
+        const threshold = 100_000;
+        const info = { name: 'Claude Haiku 5.5', baseId: 'anthropic.claude-haiku-5-5', route: 'Geo' as const };
+        const requests = [
+            { inputTokens: 20_000, outputTokens: 1_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+            // Total input 151,000 (1,000 + 150,000 cache read) is over the threshold, so the whole request is long-context.
+            { inputTokens: 1_000, outputTokens: 2_000, cacheReadTokens: 150_000, cacheWriteTokens: 0 },
+            // Exactly 100,000 is "up to" 100,000 on Anthropic's page, so it stays at standard prices.
+            { inputTokens: 100_000, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        ];
+        let period: UsagePeriod = { periodStart: '2026-10-01T00:00:00.000Z', models: {} };
+        for (const usage of requests) {
+            period = addUsage(period, 'us.anthropic.claude-haiku-5-5', info, usage, isLongContext(usage, threshold));
+        }
+        const view = buildUsageView('dev', 'us-west-2', period, new Date('2026-11-01T00:00:00Z'), table, {}, NO_CARDS);
+        // Standard: (120,000 input × 0.11 + 1,010 output × 0.55) = 13,755.5; long: (1,000 × 0.55 + 2,000 × 2.75 + 150,000 × 0.055) = 14,300 (USD per 1M tokens).
+        expect(view.rows[0]).toMatchObject({ priceSource: 'table', requests: 3, inputTokens: 121_000, cacheReadTokens: 150_000 });
+        expect(view.rows[0].cost).toBeCloseTo(0.0280555, 10);
+    });
+
+    it('Global 路由用 Global 的長 context 單價', () => {
+        const found = lookupPrice(table, {}, NO_CARDS, 'anthropic.claude-haiku-5-5', 'Claude Haiku 5.5', 'Global');
+        expect(found?.price.longContext).toEqual({ inputPerM: 0.5, outputPerM: 2.5, cacheReadPerM: 0.05, cacheWritePerM: 0.625 });
+    });
+});
+

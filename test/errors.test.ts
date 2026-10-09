@@ -62,6 +62,16 @@ describe('describeError', () => {
         expect(describeError(undefined, 'm', 'Native', 'dev')).toContain('code=UnknownError');
     });
 
+    it('使用者看到的錯誤訊息也會遮蔽 principal ARN 與 email', () => {
+        // Same AccessDenied message shape as the ListInferenceProfiles case below.
+        const raw = 'User: arn:aws:sts::123456789012:assumed-role/Test/user.name@example.com is not authorized to perform: bedrock:InvokeModel';
+        const message = describeError(awsError('AccessDeniedException', raw, 403), 'us.x', 'Native', 'dev');
+        expect(message).toContain('[AWS principal redacted]');
+        expect(message).toContain('bedrock:InvokeModel');
+        expect(message).not.toContain('arn:aws:');
+        expect(message).not.toContain('user.name@example.com');
+    });
+
     it('region 無法解析時提示 VS Code 設定與 AWS profile', () => {
         const error = withOperationContext(new Error('Region is missing'), 'ResolveRegion');
         const message = describeError(error, 'model list', 'Native', 'BedrockX');

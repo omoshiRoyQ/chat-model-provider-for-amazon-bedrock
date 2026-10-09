@@ -28,6 +28,17 @@
 
 只和特定檔案有關的規則放在 `.github/instructions/`（改到對應檔案時自動載入）：`pricing`（費用估算）、`dependencies`（相依套件與授權）。有固定步驟的流程放在 `.github/skills/`：`update-catalog`（更新 CATALOG）、`release`（版本號、CHANGELOG、封裝 VSIX）。
 
+## 發布說明格式
+
+使用者的決定（2026-10-09），`release-notes` skill 依此產出 GitHub release 草稿：
+
+- 標題與 tag 相同（例：`1.3.0`）；本文用英文。
+- `## What's Changed`：`CHANGELOG.md` 該版段落的條列原文，數量相同。
+- 注意事項段落：條列提到網路存取、遙測、資料儲存、權限、憑證或登入流程、升級後要手動執行的步驟、費用計算時才加，每段一到三句並連到 README 對應章節；都沒提到就省略。
+- `## Other languages`：`[TW](…/blob/<tag>/CHANGELOG.zh-tw.md) | [JP](…/blob/<tag>/CHANGELOG.ja.md)`。
+- 所有連結固定在 tag（`https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock/blob/<tag>/...`）；不加 `Full Changelog` 比較連結。
+- 附件：從 tag 所在 commit 建置的 `chat-model-provider-for-amazon-bedrock-<version>.vsix`。
+
 ## 程式碼規範
 
 - 不可複製三個參考 extension（`arifum.bedrock-vscode-chat`、`easytocloud.bedrock-mantle-vscode-chat`、`abhimanyus1997.bedrock-bridge-copilot`）的程式碼，只能參考做法。理由：使用者的決定。
@@ -41,6 +52,7 @@
 
 ## 已知陷阱
 
+- 不要為了「讓受限模式可用」而宣告 `capabilities.untrustedWorkspaces`：VS Code Chat 在 Restricted Mode 會自己封鎖所有模型（模型選單顯示「Models unavailable while in Restricted mode」），宣告 `limited` 也無法改變（2026-10-09 實測）。未宣告時 extension 在受限模式停用，這是預期行為，資安審查不必列為發現。
 - `bedrock-runtime` Native 路徑已實測可用 SSO profile：控制面 `list-inference-profiles` 與 runtime `ConverseStream` 都成功（2026-09-25，`us-west-2`）。
 - 在這台電腦上按 F5 時，Extension Development Host 視窗會出現 `command '...' not found`。這是假線索：真正的原因是 js-debug 連 `::1:<port>` 被拒（`ECONNREFUSED`），Extension Host 在 60 秒後逾時，所以沒有任何 extension 在執行。不要往指令註冊或 `package.json` 的方向追。確認方式：主視窗 `exthost.log` 有 `ECONNREFUSED ::1`，開發視窗 `renderer.log` 有 `Extension host did not start`。暫時改用 task「Open Extension Development Host」（`Ctrl+Shift+B`）開啟開發視窗，它會先編譯再執行 `code --new-window --extensionDevelopmentPath=<repo>`，這個方式不能設中斷點。換到個人網路後結果相同，所以和外部網路無關，不要往 VPN 或 proxy 的方向追。本機實測：`localhost` 會先解析成 `::1`，而只在 `127.0.0.1` 監聽的偵錯埠連 `::1` 會被拒。（2026-09-25 發生三次）
 
