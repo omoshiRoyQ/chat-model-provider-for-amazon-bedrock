@@ -1,7 +1,6 @@
-// and writes the same text to .agent-launchpad/probe-models-results.txt (overwritten each run); it writes only that result file.
 // Developer check: probes tool and image support of the models listed for an AWS profile with ConverseStream requests capped
 // at maxTokens=16 (billed), skipping models probed as tools=false, already having an image result, or marked unsupported. It prints lines to paste
-// and writes the same text to .project/probe-models-results.txt (overwritten each run); it writes only that result file.
+// and writes the same text to .agent-launchpad/probe-models-results.txt (overwritten each run); it writes only that result file.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } from '@aws-sdk/client-bedrock';
