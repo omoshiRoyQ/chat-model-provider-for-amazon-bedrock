@@ -150,7 +150,7 @@ export function toConverseMessages(
             const block = toContentBlock(part);
             if (block) {
                 content.push(block);
-            } else if (block === undefined) {
+            } else if (block === undefined && !isStatefulMarker(part)) {
                 const kind = describePart(part);
                 skipped.set(kind, (skipped.get(kind) ?? 0) + 1);
             }
@@ -342,6 +342,11 @@ function toToolResultContent(content: readonly unknown[]): ToolResultContentBloc
     }
     // Converse requires toolResult.content to be non-empty; return a text block when the tool has no output.
     return blocks.length > 0 ? blocks : [{ text: '(no output)' }];
+}
+
+/** Copilot attaches one stateful_marker per earlier message on every request; it is expected noise, so it is not logged. */
+function isStatefulMarker(part: unknown): boolean {
+    return part instanceof vscode.LanguageModelDataPart && part.mimeType.toLowerCase() === 'stateful_marker';
 }
 
 function describePart(part: unknown): string {

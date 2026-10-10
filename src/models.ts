@@ -87,6 +87,116 @@ export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     // Not added (2026-10-04): Claude 3.5 Haiku returned end-of-life ResourceNotFoundException; Claude Mythos 5.1 is gated and returned "The provided model identifier is invalid" with the available profile.
 };
 
+/** Results of developer probes (scripts/probe-models.mts); undefined fields were not determined. */
+export interface ProbedCapabilities {
+    /** False when ConverseStream rejected a request with toolConfig; such models are not listed. */
+    readonly tools?: boolean;
+    /** Overrides inputModalities from ListFoundationModels. */
+    readonly image?: boolean;
+    /**
+     * Set when the model cannot be used by this extension for account-independent reasons (user decision, 2026-10-10); such models are not listed.
+     * retired: end of life (ResourceNotFoundException). noConverse: ConverseStream does not support the model (ValidationException).
+     * Account-specific failures (AccessDeniedException, Legacy usage status, data retention mode) must not use this field.
+     */
+    readonly unsupported?: 'retired' | 'noConverse';
+}
+
+/**
+ * Keyed by foundation model ID. Paste lines printed by `pnpm run probe-models`. Models with a tools=false result or an image result are not probed again;
+ * a model with only a tools=true result is still probed for images.
+ * Models missing here are listed as before (user decision, 2026-10-10).
+ */
+export const PROBED_CAPABILITIES: Readonly<Record<string, ProbedCapabilities>> = {
+    // Excluded 2026-10-10 (user decision): retired models and models that do not support Converse.
+    'amazon.nova-2-5-sonic': { unsupported: 'noConverse' }, // ValidationException: This action doesn't support the model that you provided.
+    'amazon.nova-2-sonic-v1:0': { unsupported: 'noConverse' }, // ValidationException: This action doesn't support the model that you provided.
+    'amazon.nova-premier-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    'anthropic.claude-3-haiku-20240307-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    'anthropic.claude-3-sonnet-20240229-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    'meta.llama3-2-11b-instruct-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    'meta.llama3-2-1b-instruct-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    'meta.llama3-2-3b-instruct-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    'meta.llama3-2-90b-instruct-v1:0': { unsupported: 'retired' }, // ResourceNotFoundException: This model version has reached the end of its life.
+    // Probed 2026-10-10 with ConverseStream (us-west-2, maxTokens=16); image result for Gemma 3 is valid (the maxTokens=1 run misjudged it).
+    'google.gemma-3-12b-it': { tools: true, image: true },
+    'google.gemma-3-27b-it': { tools: true, image: true },
+    'google.gemma-3-4b-it': { tools: true, image: true },
+    'moonshotai.kimi-k3': { tools: true, image: true },
+    'openai.gpt-5.6-luna': { tools: true, image: true },
+    'openai.gpt-5.6-sol': { tools: true, image: true },
+    'openai.gpt-5.6-terra': { tools: true, image: true },
+    'openai.gpt-6-astra': { tools: true, image: true },
+    'openai.gpt-6-luna': { tools: true, image: true },
+    'openai.gpt-6-sol': { tools: true, image: true },
+    'openai.gpt-6.1-sol': { tools: true, image: true },
+    'xai.grok-4.6': { tools: true, image: true },
+    'xai.grok-4.7': { tools: true, image: true },
+    // Probed 2026-10-10 with ConverseStream (us-west-2, maxTokens=1)
+    'amazon.nova-2-lite-v1:0': { tools: true, image: true },
+    'amazon.nova-lite-v1:0': { tools: true, image: true },
+    'amazon.nova-micro-v1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'amazon.nova-pro-v1:0': { tools: true, image: true },
+    'anthropic.claude-haiku-4-5-20251001-v1:0': { tools: true, image: true },
+    'anthropic.claude-haiku-5-5': { tools: true, image: true },
+    'anthropic.claude-opus-4-1-20250805-v1:0': { tools: true, image: true },
+    'anthropic.claude-opus-4-5-20251101-v1:0': { tools: true, image: true },
+    'anthropic.claude-opus-4-6-v1': { tools: true, image: true },
+    'anthropic.claude-opus-4-7': { tools: true, image: true },
+    'anthropic.claude-opus-4-8': { tools: true, image: true },
+    'anthropic.claude-opus-5': { tools: true, image: true },
+    'anthropic.claude-opus-5-5': { tools: true, image: true },
+    'anthropic.claude-sonnet-4-5-20250929-v1:0': { tools: true, image: true },
+    'anthropic.claude-sonnet-4-6': { tools: true, image: true },
+    'anthropic.claude-sonnet-5': { tools: true, image: true },
+    'anthropic.claude-sonnet-5-5': { tools: true, image: true },
+    'deepseek.r1-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'deepseek.v3-v1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'deepseek.v3.2': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'meta.llama3-1-70b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'meta.llama3-1-8b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'meta.llama3-3-70b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'meta.llama3-70b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'meta.llama3-8b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'meta.llama4-maverick-17b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'meta.llama4-scout-17b-instruct-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'minimax.minimax-m2': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'minimax.minimax-m2.1': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'minimax.minimax-m2.5': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'mistral.devstral-2-123b': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'mistral.magistral-small-2509': { tools: true, image: true },
+    'mistral.ministral-3-14b-instruct': { tools: true, image: true },
+    'mistral.ministral-3-3b-instruct': { tools: true, image: true },
+    'mistral.ministral-3-8b-instruct': { tools: true, image: true },
+    'mistral.mistral-7b-instruct-v0:2': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'mistral.mistral-large-2402-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'mistral.mistral-large-2407-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'mistral.mistral-large-3-675b-instruct': { tools: true, image: true },
+    'mistral.mixtral-8x7b-instruct-v0:1': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'mistral.pixtral-large-2502-v1:0': { tools: false }, // This model doesn't support tool use in streaming mode.
+    'mistral.voxtral-mini-3b-2507': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'mistral.voxtral-small-24b-2507': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'moonshot.kimi-k2-thinking': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'moonshotai.kimi-k2.5': { tools: true, image: true },
+    'nvidia.nemotron-nano-12b-v2': { tools: true, image: true },
+    'nvidia.nemotron-nano-3-30b': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'nvidia.nemotron-nano-9b-v2': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'nvidia.nemotron-super-3-120b': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'openai.gpt-oss-120b-1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'openai.gpt-oss-20b-1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'openai.gpt-oss-safeguard-120b': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'openai.gpt-oss-safeguard-20b': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'qwen.qwen3-235b-a22b-2507-v1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'qwen.qwen3-32b-v1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'qwen.qwen3-coder-30b-a3b-v1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'qwen.qwen3-coder-480b-a35b-v1:0': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'qwen.qwen3-next-80b-a3b': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'qwen.qwen3-vl-235b-a22b': { tools: true, image: true },
+    'writer.palmyra-vision-7b': { tools: false }, // The model returned the following errors: Mantle streaming error for requestId ede387b0-0a25-48f3-a26c-046c5c03e88c: ErrorEvent { error: APIError { type: "BadRequestError", code: Some(400), message: "\"auto\" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set", param: None } }
+    'zai.glm-4.7': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'zai.glm-4.7-flash': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+    'zai.glm-5': { tools: true, image: false }, // This model doesn't support the image content block that you provided. Update the content block and try again.
+};
+
 /**
  * Conservative limits used when no source is available. Too large a value makes long requests fail with ValidationException;
  * too small a value makes VS Code trim history and attachments. 128K is the user's choice (2026-10-01): of the text models
@@ -126,10 +236,12 @@ export interface ResolvedModel {
     readonly route: 'Geo' | 'Global' | 'In-Region';
     readonly contextWindow: number;
     readonly maxOutputTokens: number;
+    /** True when maxOutputTokens comes from the catalog or a model card rather than the conservative fallback. */
+    readonly maxOutputSourced: boolean;
     readonly thinking: ThinkingStyle;
     /**
-     * Determined from inputModalities returned by ListFoundationModels; never inferred from a model name.
-     * True when foundation-model data is unavailable (user decision): Bedrock rejects unsupported images with an explicit error.
+     * From PROBED_CAPABILITIES, then inputModalities returned by ListFoundationModels; never inferred from a model name.
+     * True when neither is available (user decision): Bedrock rejects unsupported images with an explicit error.
      */
     readonly imageInput: boolean;
     /** Whether the provider adds Converse cachePoint blocks; only true for catalog entries marked promptCache. */
@@ -186,6 +298,7 @@ export function resolveModels(
     scope: InferenceScope,
     onlyClaudeAndGpt: boolean,
     cardLimits: ReadonlyMap<string, CardLimits> = new Map(),
+    probed: Readonly<Record<string, ProbedCapabilities>> = PROBED_CAPABILITIES,
 ): ResolveResult {
     const notes: string[] = [];
     const unknownIds: string[] = [];
@@ -246,6 +359,16 @@ export function resolveModels(
             notes.push(`${baseId} is omitted because model card ${entry.card} does not support Native Converse`);
             continue;
         }
+        const probe = probed[baseId];
+        if (probe?.unsupported) {
+            const reason = probe.unsupported === 'retired' ? 'the model has reached end of life' : 'ConverseStream does not support the model';
+            notes.push(`${baseId} is omitted because ${reason} (user decision 2026-10-10)`);
+            continue;
+        }
+        if (probe?.tools === false) {
+            notes.push(`${baseId} is omitted because ConverseStream rejected tool use when probed`);
+            continue;
+        }
         const card = entry ? undefined : cardLimits.get(baseId);
         if (card?.converse === false) {
             notes.push(`${baseId} is omitted because model card ${card.card} does not list Converse for bedrock-runtime`);
@@ -273,8 +396,9 @@ export function resolveModels(
             route: pick.route,
             contextWindow,
             maxOutputTokens,
+            maxOutputSourced: source?.maxOutputTokens !== undefined,
             thinking: entry?.thinking ?? 'none',
-            imageInput: foundation?.imageInput ?? true,
+            imageInput: probe?.image ?? foundation?.imageInput ?? true,
             promptCache: entry?.promptCache ?? false,
             longContextThreshold: source?.longContextThreshold,
         });

@@ -45,7 +45,7 @@
 
 沒有 `bedrock:ListFoundationModels` 時仍可正常對話，差別如下：
 
-- **圖片**：extension 無法得知模型是否支援圖片，所以每個模型都允許附圖。模型不支援時，送出後會顯示錯誤。Agent 工具回傳的圖片（例如截圖）也一樣。
+- **圖片**：每個模型依序採用第一個有資料的來源：extension 內建的圖片實測結果，其次是 `bedrock:ListFoundationModels` 回報的 `inputModalities`（輸入模態）。兩者都沒有資料時，模型允許附圖；模型不支援時，送出後會顯示錯誤。已知不支援圖片的模型不會收到圖片，extension 改送文字提示。Agent 工具回傳的圖片（例如截圖）也依相同規則處理。
 - **模型清單**：只列出 ID 以 `us.`、`global.` 等前綴開頭的模型。只能直接用 model ID 呼叫的模型（例如 `openai.gpt-oss-20b-1:0`）不會出現。
 - **Model Filter 設為列出所有模型時**：影像生成、embedding 等無法對話的模型也會出現在選單中。
 

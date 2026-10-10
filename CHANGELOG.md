@@ -2,6 +2,15 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
 
+## 1.4.0 (2026-10-10)
+
+- Requests now send the maximum output tokens published in the built-in list or the AWS model card, even when thinking effort is Default. Long responses from models such as Claude Haiku 5.5 were previously cut off at 4,096 tokens. Models without a published limit still send no maximum.
+- When a response stops because it reached the maximum output tokens, the log now records a warning with the model ID and the maximum.
+- Downloading the price table now times out after 60 seconds instead of waiting indefinitely.
+- Models that a live test showed do not support tools are no longer listed.
+- Image input support now uses live test results first, then the AWS input modalities.
+- Known `stateful_marker` entries in chat history are skipped without logging a warning.
+
 ## 1.3.0 (2026-10-09)
 
 - Added Claude Haiku 5.5 to the built-in list. Requests whose input exceeds 100K tokens, counting cache reads and writes, are priced at its long-context rates for the whole request, as stated on Anthropic's pricing page. Only usage recorded from this version on is classified.

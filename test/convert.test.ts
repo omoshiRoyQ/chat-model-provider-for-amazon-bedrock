@@ -75,6 +75,26 @@ describe('toConverseMessages', () => {
         expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('cache_control'));
     });
 
+    it('只有 stateful_marker 時不寫 warning（Copilot 每則舊訊息各附一個，屬雜訊）', () => {
+        const log = makeLog();
+        const messages = toConverseMessages([user(text('hi'), new vscode.LanguageModelDataPart(new Uint8Array([1]), 'stateful_marker'))], log, true);
+        expect(messages).toEqual([{ role: 'user', content: [{ text: 'hi' }] }]);
+        expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it('stateful_marker 與未知類型並存時，warning 只列未知類型', () => {
+        const log = makeLog();
+        toConverseMessages(
+            [
+                user(text('hi'), new vscode.LanguageModelDataPart(new Uint8Array([1]), 'stateful_marker'), new vscode.LanguageModelDataPart(new Uint8Array([1]), 'cache_control')),
+            ],
+            log,
+            true,
+        );
+        expect(log.warn).toHaveBeenCalledTimes(1);
+        expect(log.warn).toHaveBeenCalledWith('Skipped unsupported message parts: LanguageModelDataPart(cache_control)×1');
+    });
+
     it('Converse 不支援的圖片格式略過', () => {
         const messages = toConverseMessages([user(text('x'), vscode.LanguageModelDataPart.image(PNG, 'image/bmp'))], makeLog(), true);
         expect(messages[0].content).toEqual([{ text: 'x' }]);

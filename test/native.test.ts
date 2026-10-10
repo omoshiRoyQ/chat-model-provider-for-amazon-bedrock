@@ -34,6 +34,25 @@ describe('NativeConverseClient usage', () => {
     });
 });
 
+/** stopReason=max_tokens with outputTokens=4096 was observed from Claude Haiku 5.5 on 2026-10-09 (user log). */
+describe('NativeConverseClient stop reason', () => {
+    it('寫 warn log 並附上送出的 maxTokens', async () => {
+        const send = vi.spyOn(BedrockRuntimeClient.prototype, 'send').mockResolvedValue({
+            stream: (async function* () {
+                yield { messageStop: { stopReason: 'max_tokens' } };
+            })(),
+        } as never);
+        const log = { info: vi.fn(), warn: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) } as unknown as vscode.CancellationToken;
+        try {
+            await new NativeConverseClient(log).stream({ profile: 'p', region: 'us-west-2', modelId: 'm', messages: [], toolConfig: undefined, maxTokens: 128_000 }, () => undefined, token);
+        } finally {
+            send.mockRestore();
+        }
+        expect(log.warn).toHaveBeenCalledWith(expect.stringMatching(/stopReason=max_tokens, maxTokens=128000$/));
+    });
+});
+
 /**
  * Expected values come from the user's decision (2026-09-29): parse errors must not include the raw tool input,
  * because it is chat-derived content and README states that logs never contain chat content.

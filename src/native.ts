@@ -124,7 +124,12 @@ export class NativeConverseClient {
                         onPart({ kind: 'toolCall', callId: pending.callId, name: pending.name, input: parseToolInput(pending.input, pending.name) });
                     }
                 } else if (event.messageStop) {
-                    this.log.info(`model=${params.modelId} completed, stopReason=${event.messageStop.stopReason}`);
+                    const stopReason = event.messageStop.stopReason;
+                    if (stopReason === 'max_tokens') {
+                        this.log.warn(`model=${params.modelId} response truncated, stopReason=max_tokens, maxTokens=${params.maxTokens ?? '(model default)'}`);
+                    } else {
+                        this.log.info(`model=${params.modelId} completed, stopReason=${stopReason}`);
+                    }
                 } else if (event.metadata?.usage) {
                     const u = event.metadata.usage;
                     this.log.info(`model=${params.modelId} usage: ${JSON.stringify(u)}`);

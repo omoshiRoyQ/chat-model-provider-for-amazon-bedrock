@@ -296,7 +296,8 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             system,
             toolConfig,
             additionalFields: thinking.fields,
-            maxTokens: thinking.maxTokens,
+            // Without inferenceConfig, Bedrock applies the model's default cap (4,096 observed for Claude Haiku 5.5).
+            maxTokens: thinking.maxTokens ?? (resolved?.maxOutputSourced ? resolved.maxOutputTokens : undefined),
         };
         const request = withCache(baseRequest);
         const tagFilter = model.id.includes('amazon.nova-') ? new ThinkingTagFilter() : undefined;

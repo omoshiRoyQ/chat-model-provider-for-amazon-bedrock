@@ -45,7 +45,7 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
 
 Without `bedrock:ListFoundationModels`, chat still works, with these differences:
 
-- **Images**: The extension cannot tell whether a model supports images, so every model accepts image attachments. If the model does not support images, you see an error after sending. The same applies to images returned by agent tools, such as screenshots.
+- **Images**: For each model, the extension uses the first available source: built-in image test results, then the `inputModalities` reported by `bedrock:ListFoundationModels`. If neither is available, the model accepts image attachments, and if it does not support images, you see an error after sending. Models known not to support images do not receive images; the extension sends a text note instead. Images returned by agent tools, such as screenshots, follow the same rules.
 - **Model list**: Only models whose IDs start with a prefix such as `us.` or `global.` are listed. Models that can be called only by their plain model ID, such as `openai.gpt-oss-20b-1:0`, do not appear.
 - **When Model Filter shows all models**: Models that cannot chat, such as image generation and embedding models, also appear in the picker.
 

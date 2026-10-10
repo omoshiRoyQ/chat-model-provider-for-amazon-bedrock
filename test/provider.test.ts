@@ -121,7 +121,7 @@ describe('AmazonBedrockProvider prompt cache', () => {
         const signInBar = { show: vi.fn(), hide: vi.fn() } as unknown as SignInStatusBar;
         const provider = new AmazonBedrockProvider(log, signInBar, {} as SsoSignIn, { thinkingEffort: () => 'default', onUsage: vi.fn() }, {} as ModelCardStore);
         const id = 'us.anthropic.claude-sonnet-5-5';
-        const resolved: ResolvedModel = { invokeId: id, baseId: 'anthropic.claude-sonnet-5-5', name: 'Claude Sonnet 5.5', route: 'Geo', contextWindow: 1_000_000, maxOutputTokens: 128_000, thinking: 'none', imageInput: true, promptCache };
+        const resolved: ResolvedModel = { invokeId: id, baseId: 'anthropic.claude-sonnet-5-5', name: 'Claude Sonnet 5.5', route: 'Geo', contextWindow: 1_000_000, maxOutputTokens: 128_000, maxOutputSourced: true, thinking: 'none', imageInput: true, promptCache };
         (provider as unknown as { modelsById: Map<string, ResolvedModel> }).modelsById = new Map([[id, resolved]]);
         const model = { id, name: resolved.name, maxOutputTokens: 128_000, capabilities: {} } as vscode.LanguageModelChatInformation;
         const messages = [
@@ -144,5 +144,96 @@ describe('AmazonBedrockProvider prompt cache', () => {
 
     it('沒有 promptCache 的模型不加 cachePoint', async () => {
         expect(JSON.stringify(await send(false))).not.toContain('cachePoint');
+    });
+});
+
+/** Expected 128,000-token limit comes from the AWS Claude Haiku 5.5 model card recorded in src/models.ts. */
+describe('AmazonBedrockProvider output token limit', () => {
+    it('passes the catalog limit to Converse when thinking effort is default', async () => {
+        mocks.readSettings.mockReturnValue({
+            ...settings(process.env.AWS_PROFILE ?? ''),
+            region: process.env.AWS_REGION ?? '',
+        });
+        mocks.stream.mockReset().mockResolvedValue(undefined);
+
+        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const provider = new AmazonBedrockProvider(log, { show: vi.fn(), hide: vi.fn() } as unknown as SignInStatusBar, {} as SsoSignIn, {
+            thinkingEffort: () => 'default',
+            onUsage: vi.fn(),
+        }, {} as ModelCardStore);
+        const modelId = 'us.anthropic.claude-haiku-5-5';
+        const resolved: ResolvedModel = {
+            invokeId: modelId,
+            baseId: 'anthropic.claude-haiku-5-5',
+            name: 'Claude Haiku 5.5',
+            route: 'Geo',
+            contextWindow: 1_000_000,
+            maxOutputTokens: 128_000,
+            maxOutputSourced: true,
+            thinking: 'adaptive',
+            imageInput: false,
+            promptCache: true,
+            longContextThreshold: 100_000,
+        };
+        (provider as unknown as { modelsById: Map<string, ResolvedModel> }).modelsById = new Map([[modelId, resolved]]);
+        const model = {
+            id: modelId,
+            name: resolved.name,
+            maxOutputTokens: resolved.maxOutputTokens,
+            capabilities: { imageInput: false },
+        } as vscode.LanguageModelChatInformation;
+
+        try {
+            await provider.provideLanguageModelChatResponse(
+                model,
+                [{ role: vscode.LanguageModelChatMessageRole.User, content: [new vscode.LanguageModelTextPart('Reply briefly.')], name: undefined }],
+                { tools: undefined, toolMode: vscode.LanguageModelChatToolMode.Auto },
+                { report: vi.fn() },
+                { isCancellationRequested: false } as vscode.CancellationToken,
+            );
+
+            expect(mocks.stream.mock.calls[0][0].maxTokens).toBe(resolved.maxOutputTokens);
+        } finally {
+            provider.dispose();
+        }
+    });
+
+    it('omits maxTokens when the limit is only the conservative fallback', async () => {
+        mocks.readSettings.mockReturnValue(settings('dev'));
+        mocks.stream.mockReset().mockResolvedValue(undefined);
+        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const provider = new AmazonBedrockProvider(log, { show: vi.fn(), hide: vi.fn() } as unknown as SignInStatusBar, {} as SsoSignIn, {
+            thinkingEffort: () => 'default',
+            onUsage: vi.fn(),
+        }, {} as ModelCardStore);
+        const modelId = 'us.anthropic.claude-3-sonnet-20240229-v1:0';
+        const resolved: ResolvedModel = {
+            invokeId: modelId,
+            baseId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+            name: 'Claude 3 Sonnet',
+            route: 'Geo',
+            contextWindow: 128_000,
+            maxOutputTokens: 4_096,
+            maxOutputSourced: false,
+            thinking: 'none',
+            imageInput: true,
+            promptCache: false,
+        };
+        (provider as unknown as { modelsById: Map<string, ResolvedModel> }).modelsById = new Map([[modelId, resolved]]);
+        const model = { id: modelId, name: resolved.name, maxOutputTokens: 4_096, capabilities: {} } as vscode.LanguageModelChatInformation;
+
+        try {
+            await provider.provideLanguageModelChatResponse(
+                model,
+                [{ role: vscode.LanguageModelChatMessageRole.User, content: [new vscode.LanguageModelTextPart('Reply briefly.')], name: undefined }],
+                { tools: undefined, toolMode: vscode.LanguageModelChatToolMode.Auto },
+                { report: vi.fn() },
+                { isCancellationRequested: false } as vscode.CancellationToken,
+            );
+
+            expect(mocks.stream.mock.calls[0][0].maxTokens).toBeUndefined();
+        } finally {
+            provider.dispose();
+        }
     });
 });

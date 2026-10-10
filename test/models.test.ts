@@ -63,7 +63,7 @@ describe('resolveModels', () => {
 
     it('token 上限與 thinking 格式取自模型卡資料表', () => {
         const opus = resolveModels(profiles, foundations, 'geo', true).models.find((m) => m.baseId === OPUS_55);
-        expect(opus).toMatchObject({ contextWindow: 1_000_000, maxOutputTokens: 128_000, thinking: 'adaptiveAlways', name: 'Claude Opus 5.5' });
+        expect(opus).toMatchObject({ contextWindow: 1_000_000, maxOutputTokens: 128_000, maxOutputSourced: true, thinking: 'adaptiveAlways', name: 'Claude Opus 5.5' });
     });
 
     it('模型卡寫明不支援 Native 的模型不列出（GPT - 5.4）', () => {
@@ -73,10 +73,11 @@ describe('resolveModels', () => {
     });
 
     it('資料表沒有的模型用保守值、不送 thinking，並寫進 notes', () => {
-        const r = resolveModels(profiles, foundations, 'geo', true);
+        // Empty probe table: Claude 3 Sonnet is retired and excluded by the default table (user decision 2026-10-10).
+        const r = resolveModels(profiles, foundations, 'geo', true, new Map(), {});
         const sonnet3 = r.models.find((m) => m.baseId === 'anthropic.claude-3-sonnet-20240229-v1:0');
         // Conservative context window 128K is the user's decision (2026-10-01).
-        expect(sonnet3).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_096, thinking: 'none' });
+        expect(sonnet3).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_096, maxOutputSourced: false, thinking: 'none' });
         expect(r.notes.join('\n')).toContain('claude-3-sonnet');
         expect(r.unknownIds).toEqual(['anthropic.claude-3-sonnet-20240229-v1:0']);
     });
@@ -84,8 +85,8 @@ describe('resolveModels', () => {
     it('資料表沒有、但已快取 model card 的模型用 model card 的數字，thinking 仍不送', () => {
         // Llama 3.3 figures come from model-card-meta-llama-3-3-70b-instruct (fetched 2026-10-01).
         const cards = new Map([['meta.llama3-3-70b-instruct-v1:0', { card: 'model-card-meta-llama-3-3-70b-instruct', contextWindow: 128_000, maxOutputTokens: 4_000 }]]);
-        const r = resolveModels(profiles, foundations, 'geo', false, cards);
-        expect(r.models.find((m) => m.baseId === 'meta.llama3-3-70b-instruct-v1:0')).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_000, thinking: 'none' });
+        const r = resolveModels(profiles, foundations, 'geo', false, cards, {});
+        expect(r.models.find((m) => m.baseId === 'meta.llama3-3-70b-instruct-v1:0')).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_000, maxOutputSourced: true, thinking: 'none' });
         expect(r.unknownIds).not.toContain('meta.llama3-3-70b-instruct-v1:0');
         expect(r.notes.join('\n')).toContain('model-card-meta-llama-3-3-70b-instruct');
     });
@@ -94,7 +95,8 @@ describe('resolveModels', () => {
         // model-card-amazon-nova-2-sonic (fetched 2026-10-01) lists only InvokeModelWithBidirectionalStream.
         const sonic = 'amazon.nova-2-sonic-v1:0';
         const cards = new Map([[sonic, { card: 'model-card-amazon-nova-2-sonic', contextWindow: 1_000_000, maxOutputTokens: 64_000, converse: false }]]);
-        const r = resolveModels([], [foundation(sonic, 'Nova 2 Sonic', { onDemand: true })], 'geo', false, cards);
+        // Empty probe table: Nova 2 Sonic is excluded by the default table, so this exercises the model card path only.
+        const r = resolveModels([], [foundation(sonic, 'Nova 2 Sonic', { onDemand: true })], 'geo', false, cards, {});
         expect(ids(r)).not.toContain(sonic);
         expect(r.notes.join('\n')).toContain('does not list Converse');
     });
@@ -107,7 +109,8 @@ describe('resolveModels', () => {
 
     it('找不到 foundation model 時：名稱改用去掉地區字樣的 profile 名稱，並視為支援圖片輸入', () => {
         // Expected imageInput=true is the user's decision (2026-09-30): Bedrock rejects unsupported images explicitly.
-        const sonnet3 = resolveModels(profiles, foundations, 'geo', true).models.find((m) => m.baseId.includes('claude-3-sonnet'));
+        // Empty probe table: Claude 3 Sonnet is retired and excluded by default (user decision 2026-10-10).
+        const sonnet3 = resolveModels(profiles, foundations, 'geo', true, new Map(), {}).models.find((m) => m.baseId.includes('claude-3-sonnet'));
         expect(sonnet3?.name).toBe('Anthropic Claude 3 Sonnet');
         expect(sonnet3?.imageInput).toBe(true);
     });
@@ -119,7 +122,8 @@ describe('resolveModels', () => {
     });
 
     it('promptCache 只對 prompt-caching.html 列出的 Claude 開啟（Opus 4.1 未列出；GPT 與資料表沒有的模型不開）', () => {
-        const r = resolveModels(profiles, foundations, 'global', true);
+        // Empty probe table so that Claude 3 Sonnet (retired, excluded by default) is still listed for the non-caching check.
+        const r = resolveModels(profiles, foundations, 'global', true, new Map(), {});
         const cache = (base: string) => r.models.find((m) => m.baseId === base)?.promptCache;
         expect(cache(OPUS_55)).toBe(true);
         expect(cache(OPUS_41)).toBe(false);
@@ -145,15 +149,28 @@ describe('resolveModels', () => {
     });
 
     it('imageInput 依 foundation model 的 inputModalities', () => {
-        const r = resolveModels(profiles, foundations, 'geo', false);
+        // Empty probe table: Llama 3.3 is probed tools=false, so it would otherwise be omitted.
+        const r = resolveModels(profiles, foundations, 'geo', false, new Map(), {});
         expect(r.models.find((m) => m.baseId === OPUS_55)?.imageInput).toBe(true);
         expect(r.models.find((m) => m.baseId.startsWith('meta.'))?.imageInput).toBe(false);
+    });
+
+    it('實測結果：工具被拒的模型不列出，圖片實測優先於 inputModalities，沒測過的照舊列出', () => {
+        // Rules are the user's decisions (2026-10-10); Mixtral's tool rejection was observed in the user's log on 2026-10-10.
+        const mixtral = 'mistral.mixtral-8x7b-instruct-v0:1';
+        const probed = { [mixtral]: { tools: false }, [OPUS_55]: { tools: true, image: false }, 'meta.llama3-3-70b-instruct-v1:0': { image: true } };
+        const r = resolveModels(profiles, [...foundations, foundation(mixtral, 'Mixtral 8x7B Instruct', { onDemand: true })], 'geo', false, new Map(), probed);
+        expect(ids(r)).not.toContain(mixtral);
+        expect(r.notes.join('\n')).toContain(`${mixtral} is omitted because ConverseStream rejected tool use`);
+        expect(r.models.find((m) => m.baseId === OPUS_55)?.imageInput).toBe(false);
+        expect(r.models.find((m) => m.baseId.startsWith('meta.'))?.imageInput).toBe(true);
+        expect(r.models.find((m) => m.baseId === OPUS_41)?.imageInput).toBe(true);
     });
 
     it('onlyClaudeAndGpt=true 只列 anthropic. 與 openai. 開頭的模型', () => {
         const r = resolveModels(profiles, foundations, 'geo', true);
         expect(r.models.every((m) => m.baseId.startsWith('anthropic.') || m.baseId.startsWith('openai.'))).toBe(true);
-        expect(ids(resolveModels(profiles, foundations, 'geo', false))).toContain('us.meta.llama3-3-70b-instruct-v1:0');
+        expect(ids(resolveModels(profiles, foundations, 'geo', false, new Map(), {}))).toContain('us.meta.llama3-3-70b-instruct-v1:0');
     });
 
     it('排除輸出不是文字的模型與 rerank；沒有 profile 的 on-demand 模型以裸 ID 在同區呼叫', () => {
@@ -166,5 +183,54 @@ describe('resolveModels', () => {
     it('略過非 ACTIVE 的 profile', () => {
         const r = resolveModels([profile(`us.${OPUS_55}`, 'x', false)], foundations, 'geo', true);
         expect(ids(r)).not.toContain(`us.${OPUS_55}`);
+    });
+
+    it('已下線或不支援 Converse 的 9 個模型一律略過，並寫入 note（使用者決定 2026-10-10）', () => {
+        const excluded = [
+            'amazon.nova-2-5-sonic',
+            'amazon.nova-2-sonic-v1:0',
+            'amazon.nova-premier-v1:0',
+            'anthropic.claude-3-haiku-20240307-v1:0',
+            'anthropic.claude-3-sonnet-20240229-v1:0',
+            'meta.llama3-2-1b-instruct-v1:0',
+            'meta.llama3-2-3b-instruct-v1:0',
+            'meta.llama3-2-11b-instruct-v1:0',
+            'meta.llama3-2-90b-instruct-v1:0',
+        ];
+        // Sources: the probe log in dist/probe-models-results.txt (2026-10-10, us-west-2): ResourceNotFoundException (end of life) or ValidationException (not a supported model for this action).
+        const r = resolveModels(
+            excluded.map((id) => profile(`us.${id}`)),
+            excluded.map((id) => foundation(id, id)),
+            'geo',
+            false,
+        );
+        expect(ids(r)).toEqual([]);
+        expect(r.unknownIds).toEqual([]);
+        for (const id of excluded) {
+            expect(r.notes.join('\n')).toContain(`${id} is omitted because`);
+        }
+    });
+
+    it('帳號權限或帳號設定造成的失敗不排除（Pegasus 1.5、Pegasus 1.2、Palmyra X4/X5、GLM 5.3、Sonnet 4 Legacy、Fable 5）', () => {
+        // Sources: dist/probe-models-results.txt (2026-10-10). AccessDeniedException (Marketplace or account not enabled), Legacy status, and data retention mode depend on the account, not the model.
+        // twelvelabs.pegasus-1-5 is kept even though one earlier probe reported Converse unsupported, because a later run returned AccessDeniedException instead.
+        const kept = [
+            'twelvelabs.pegasus-1-5-v1:0',
+            'twelvelabs.pegasus-1-2-v1:0',
+            'writer.palmyra-x4-v1:0',
+            'writer.palmyra-x5-v1:0',
+            'zai.glm-5.3',
+            'anthropic.claude-sonnet-4-20250514-v1:0',
+            'anthropic.claude-fable-5',
+            'anthropic.claude-fable-5-1',
+        ];
+        const r = resolveModels(
+            kept.map((id) => profile(`us.${id}`)),
+            kept.map((id) => foundation(id, id)),
+            'geo',
+            false,
+        );
+        expect(r.models.map((m) => m.baseId).sort()).toEqual([...kept].sort());
+        expect(r.notes.join('\n')).not.toContain('user decision 2026-10-10');
     });
 });

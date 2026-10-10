@@ -46,6 +46,7 @@
 - SSO token 過期（`ExpiredTokenException`、`TokenRefreshRequired`、`CredentialsProviderError` 等）時，要顯示明確的錯誤訊息，提示使用者執行 `aws sso login --profile <name>`，並提供「登入」按鈕。不可只回一般錯誤，也不可無聲重試。按鈕只能由使用者按下才執行 `aws sso login`，不可在背景自動執行，也不可自動重送失敗的 Chat 請求。理由：自動開瀏覽器會嚇到使用者，而 VS Code 會頻繁在背景查詢模型清單。
 - 回報給 VS Code 的 `maxInputTokens`、`maxOutputTokens` 必須有來源（AWS 文件或 API 回傳值），並在程式碼註解標出來源。沒有來源的模型用保守值，並寫進 log。不可從模型名稱推測（反例：看到 `claude` 就回報 200K）。理由：參考 extension 回報錯誤的 context window。
 - 某個模型呼叫失敗時，錯誤訊息要包含 model ID、呼叫路徑（目前固定為 Native）與 AWS 回傳的原始錯誤碼。理由：參考 extension 有部分模型呼叫失敗卻無從判斷原因。
+- 只有與帳號無關的失敗才能在 `PROBED_CAPABILITIES` 用 `unsupported` 排除模型（已下線用 `retired`，不支援 Converse 用 `noConverse`，實測不支援工具用 `tools: false`）。帳號權限或帳號設定造成的失敗一律不排除，因為別的帳號可能可以用。反例：Pegasus 1.5 因 `AccessDeniedException`（Marketplace 訂閱或帳號不開放）不可排除；Fable 的 data retention mode（需帳號設為 `aws_review`）不可排除；Sonnet 4 的「Legacy 且 30 天未使用」不可排除。理由：排除是全域的，會替所有使用者隱藏模型。
 - 使用者看得到的字串（README、CHANGELOG、`package.nls*.json`、`l10n`）要提供 EN、TW、JP 三種版本，EN 為預設。檔案對應：EN 是 `package.nls.json`、`README.md`、`CHANGELOG.md`（l10n 不另外建檔）、TW 是 `*.zh-tw.json`、`*.zh-tw.md`、JP 是 `*.ja.json`、`*.ja.md`。TW 指臺灣華語正體中文。README 等處標示語言時也寫 EN、TW、JP。理由：extension 會發布到 Marketplace；語言代號是使用者的決定。
 - 程式碼註解使用英文，方便國際開發者閱讀。反例：`// 取得憑證`。
 - Commit message 遵循 Conventional Commits：類型前綴用英文（`feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`build`、`ci`），冒號後的說明也用英文。正例：`feat: add Converse streaming response`；反例：`新增 Converse 串流回應`（缺少類型前綴）、`功能: add streaming`（前綴不是標準類型）。理由：業界慣例，可用工具自動產生 CHANGELOG。
