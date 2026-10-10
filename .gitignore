@@ -4,5 +4,5 @@ dist/
 package-lock.json
 yarn.lock
 .vscode/settings.json
-.project/progress.md
-.project/probe-models-results.txt
+.agent-launchpad/plan.md
+.agent-launchpad/probe-models-results.txt

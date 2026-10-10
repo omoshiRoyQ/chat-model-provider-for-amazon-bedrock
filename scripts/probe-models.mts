@@ -1,3 +1,4 @@
+// and writes the same text to .agent-launchpad/probe-models-results.txt (overwritten each run); it writes only that result file.
 // Developer check: probes tool and image support of the models listed for an AWS profile with ConverseStream requests capped
 // at maxTokens=16 (billed), skipping models probed as tools=false, already having an image result, or marked unsupported. It prints lines to paste
 // and writes the same text to .project/probe-models-results.txt (overwritten each run); it writes only that result file.
@@ -10,7 +11,7 @@ import { PROBED_CAPABILITIES, resolveModels, type FoundationSummary, type Profil
 
 // Every line printed to the terminal is also kept here so the result file holds the same text.
 const output: string[] = [];
-const PROJECT_DIR = new URL('../.project/', import.meta.url);
+const PROJECT_DIR = new URL('../.agent-launchpad/', import.meta.url);
 const RESULT_FILE = new URL('probe-models-results.txt', PROJECT_DIR);
 
 function say(line = '', stream: (text: string) => void = console.log): void {
@@ -19,7 +20,7 @@ function say(line = '', stream: (text: string) => void = console.log): void {
 }
 
 function saveResults(): void {
-    mkdirSync(PROJECT_DIR, { recursive: true }); // Create .project/ on a fresh clone so paid results are not lost at the end.
+    mkdirSync(PROJECT_DIR, { recursive: true }); // Create .agent-launchpad/ on a fresh clone so paid results are not lost at the end.
     writeFileSync(RESULT_FILE, `${output.join('\n')}\n`, 'utf8');
 }
 
