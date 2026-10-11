@@ -104,7 +104,6 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         try {
             const models = await this.listModels(settings);
             this.lastModelListErrorKey = undefined;
-            this.clearCredentialProblem();
             return models.map(toChatInformation);
         } catch (error) {
             const message = describeError(error, LIST_OPERATION, 'Native', settings.profile);
@@ -204,6 +203,8 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         const promise = (async () => {
             this.log.info(`Loading model list: profile=${settings.profile}, scope=${settings.inferenceScope}, modelFilter=${settings.modelFilter}`);
             const sources = await fetchModelSources(settings.profile, settings.region);
+            // Only a real AWS call proves the credentials work; a cached list must not hide the sign-in button after the token expires.
+            this.clearCredentialProblem();
             this.resolvedRegion = sources.region;
             this.log.info(`Resolved region=${sources.region} (${settings.region ? 'from settings' : 'from profile'})`);
             if (sources.foundationsDenied) {

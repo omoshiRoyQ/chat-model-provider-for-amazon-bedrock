@@ -9,6 +9,7 @@ import type { SignInStatusBar } from '../src/statusBar';
 const mocks = vi.hoisted(() => ({
     stream: vi.fn(),
     readSettings: vi.fn(),
+    fetchModelSources: vi.fn(),
 }));
 
 vi.mock('../src/native', () => ({
@@ -16,6 +17,10 @@ vi.mock('../src/native', () => ({
         stream = mocks.stream;
         constructor(_log: unknown) { }
     },
+}));
+
+vi.mock('../src/modelList', () => ({
+    fetchModelSources: mocks.fetchModelSources,
 }));
 
 vi.mock('../src/settings', () => ({
@@ -75,6 +80,43 @@ describe('AmazonBedrockProvider usage attribution', () => {
 });
 
 /** The rejection message was observed from Mistral 7B Instruct on 2026-10-01; resending as user text is the user's decision. */
+/** Expected behavior comes from the user's report: after the SSO token expires mid-session, the sign-in button must stay until a real AWS call succeeds. */
+describe('AmazonBedrockProvider sign-in button', () => {
+    it('stays visible when VS Code re-queries a cached model list after a credential failure', async () => {
+        mocks.readSettings.mockReturnValue(settings('dev'));
+        mocks.fetchModelSources.mockReset().mockResolvedValue({ region: 'us-west-2', profiles: [], foundations: [], foundationsDenied: false });
+        mocks.stream.mockReset().mockRejectedValue(Object.assign(new Error('Token is expired.'), { name: 'CredentialsProviderError' }));
+        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const show = vi.fn();
+        const hide = vi.fn();
+        const modelCards = { limits: () => new Map(), needsRefresh: () => false } as unknown as ModelCardStore;
+        const provider = new AmazonBedrockProvider(log, { show, hide } as unknown as SignInStatusBar, {} as SsoSignIn, {
+            thinkingEffort: () => 'default',
+            onUsage: vi.fn(),
+        }, modelCards);
+        const model = { id: 'us.anthropic.test-model', name: 'Test Model', maxOutputTokens: 4_096, capabilities: { imageInput: false } } as vscode.LanguageModelChatInformation;
+        try {
+            await provider.provideLanguageModelChatInformation({ silent: true }, {} as vscode.CancellationToken);
+            await expect(provider.provideLanguageModelChatResponse(
+                model,
+                [],
+                { tools: undefined, toolMode: vscode.LanguageModelChatToolMode.Auto },
+                { report: vi.fn() },
+                { isCancellationRequested: false } as vscode.CancellationToken,
+            )).rejects.toThrow();
+            expect(show).toHaveBeenCalledTimes(1);
+            hide.mockClear();
+
+            await provider.provideLanguageModelChatInformation({ silent: true }, {} as vscode.CancellationToken);
+
+            expect(mocks.fetchModelSources).toHaveBeenCalledTimes(1);
+            expect(hide).not.toHaveBeenCalled();
+        } finally {
+            provider.dispose();
+        }
+    });
+});
+
 describe('AmazonBedrockProvider system messages', () => {
     it('resends with the system prompt as user text when the model rejects system messages, then skips the field', async () => {
         mocks.readSettings.mockReturnValue(settings('dev'));

@@ -2,6 +2,10 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
 
+## 1.4.1 (2026-10-11)
+
+- The Sign in button in the status bar no longer disappears while the AWS SSO token is still expired. It was hidden whenever VS Code re-read the cached model list; now it is hidden only after a request to AWS succeeds or you sign in.
+
 ## 1.4.0 (2026-10-10)
 
 - Requests now send the maximum output tokens published in the built-in list or the AWS model card, even when thinking effort is Default. Long responses from models such as Claude Haiku 5.5 were previously cut off at 4,096 tokens. Models without a published limit still send no maximum.

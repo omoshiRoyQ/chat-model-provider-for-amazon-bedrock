@@ -2,7 +2,7 @@
   "name": "chat-model-provider-for-amazon-bedrock",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "publisher": "omoshiRoyQ",
   "icon": "icon.png",
   "license": "MIT",

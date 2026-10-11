@@ -30,14 +30,12 @@
 
 ## 發布說明格式
 
-使用者的決定（2026-10-09），`release-notes` skill 依此產出 GitHub release 草稿：
+預設格式（CHANGELOG 條目風格、GitHub release 模板）在 user-level 的 `release-notes` skill；以下只記錄本專案的差異：
 
-- 標題與 tag 相同（例：`1.3.0`）；本文用英文。
-- `## What's Changed`：`CHANGELOG.md` 該版段落的條列原文，數量相同。
-- 注意事項段落：條列提到網路存取、遙測、資料儲存、權限、憑證或登入流程、升級後要手動執行的步驟、費用計算時才加，每段一到三句並連到 README 對應章節；都沒提到就省略。
+- 本文用英文；語言代號是 EN、TW、JP。
 - `## Other languages`：`[TW](…/blob/<tag>/CHANGELOG.zh-tw.md) | [JP](…/blob/<tag>/CHANGELOG.ja.md)`。
-- 所有連結固定在 tag（`https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock/blob/<tag>/...`）；不加 `Full Changelog` 比較連結。
-- 附件：從 tag 所在 commit 建置的 `chat-model-provider-for-amazon-bedrock-<version>.vsix`。
+- 連結前綴：`https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock/blob/<tag>/`。
+- 附件：`chat-model-provider-for-amazon-bedrock-<version>.vsix`。
 
 ## 程式碼規範
 
@@ -47,7 +45,7 @@
 - 回報給 VS Code 的 `maxInputTokens`、`maxOutputTokens` 必須有來源（AWS 文件或 API 回傳值），並在程式碼註解標出來源。沒有來源的模型用保守值，並寫進 log。不可從模型名稱推測（反例：看到 `claude` 就回報 200K）。理由：參考 extension 回報錯誤的 context window。
 - 某個模型呼叫失敗時，錯誤訊息要包含 model ID、呼叫路徑（目前固定為 Native）與 AWS 回傳的原始錯誤碼。理由：參考 extension 有部分模型呼叫失敗卻無從判斷原因。
 - 只有與帳號無關的失敗才能在 `PROBED_CAPABILITIES` 用 `unsupported` 排除模型（已下線用 `retired`，不支援 Converse 用 `noConverse`，實測不支援工具用 `tools: false`）。帳號權限或帳號設定造成的失敗一律不排除，因為別的帳號可能可以用。反例：Pegasus 1.5 因 `AccessDeniedException`（Marketplace 訂閱或帳號不開放）不可排除；Fable 的 data retention mode（需帳號設為 `aws_review`）不可排除；Sonnet 4 的「Legacy 且 30 天未使用」不可排除。理由：排除是全域的，會替所有使用者隱藏模型。
-- 使用者看得到的字串（README、CHANGELOG、`package.nls*.json`、`l10n`）要提供 EN、TW、JP 三種版本，EN 為預設。檔案對應：EN 是 `package.nls.json`、`README.md`、`CHANGELOG.md`（l10n 不另外建檔）、TW 是 `*.zh-tw.json`、`*.zh-tw.md`、JP 是 `*.ja.json`、`*.ja.md`。TW 指臺灣華語正體中文。README 等處標示語言時也寫 EN、TW、JP。理由：extension 會發布到 Marketplace；語言代號是使用者的決定。
+- 使用者看得到的字串（README、CHANGELOG、`package.nls*.json`、`l10n`）依 user-level 的 `docs-style` 提供 EN、TW、JP 三種版本。本專案差異：`l10n` 的 EN 字串就是原始碼中的 `vscode.l10n.t()` 文字，不另外建檔，只有 `l10n/bundle.l10n.zh-tw.json`、`l10n/bundle.l10n.ja.json`。理由：extension 會發布到 Marketplace。
 - 程式碼註解使用英文，方便國際開發者閱讀。反例：`// 取得憑證`。
 - Commit message 遵循 Conventional Commits：類型前綴用英文（`feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`build`、`ci`），冒號後的說明也用英文。正例：`feat: add Converse streaming response`；反例：`新增 Converse 串流回應`（缺少類型前綴）、`功能: add streaming`（前綴不是標準類型）。理由：業界慣例，可用工具自動產生 CHANGELOG。
 

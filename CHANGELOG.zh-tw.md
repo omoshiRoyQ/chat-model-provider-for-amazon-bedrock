@@ -2,6 +2,10 @@
 
 [EN](CHANGELOG.md) | [JP](CHANGELOG.ja.md)
 
+## 1.4.1（2026-10-11）
+
+- AWS SSO token 仍過期時，狀態列的「登入」按鈕不會再消失。先前 VS Code 重新讀取快取的模型清單就會隱藏按鈕；現在只有對 AWS 的請求成功或完成登入後才會隱藏。
+
 ## 1.4.0（2026-10-10）
 
 - 即使 thinking effort 為預設，只要內建清單或 AWS model card 有公布最大輸出 token 數，請求現在都會送出該上限。先前 Claude Haiku 5.5 等模型的長回應會在 4,096 token 被截斷。沒有公布上限的模型仍不送出上限。
