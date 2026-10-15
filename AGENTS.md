@@ -2,18 +2,18 @@
 
 這個 VS Code extension 實作 `LanguageModelChatProvider`，把 Amazon Bedrock 的模型接進 VS Code Chat 的模型選單。模型請求只使用 `bedrock-runtime` endpoint 的 AWS SDK Native ConverseStream API；不使用 `bedrock-mantle` endpoint，也不使用 `bedrock-runtime` 上的 OpenAI 相容 Chat Completions／Responses 或 Anthropic Messages API。技術堆疊為 TypeScript，套件管理用 pnpm，使用 esbuild 建置。
 
-## 環境與權限
+## Environment and Permissions
 
 - 認證只使用使用者指定的 AWS named profile，透過 AWS SDK 的 `fromIni({ profile })` 取得憑證，支援 SSO。不支援 API key、直接提供 access key 或 SDK default credential chain；除非使用者明確提出需求，否則不得擴充。理由：使用者選擇安全性優先於泛用性；目前只維護已驗證的 profile + SSO 流程，避免增加憑證儲存與選擇路徑。
 - 測試用的 profile 名稱與 region 由使用者提供，不可寫死在程式碼或測試中。
 - `profile`、`region`、`inferenceScope` 設定刻意不宣告 `scope`，受信任專案的 `.vscode/settings.json` 可以覆寫。這不算資安問題，資安審查不必列出。理由：使用者的決定（2026-10-04）；專案只能指定名稱，認證仍只能用使用者 `~/.aws/config` 裡既有的 profile。
 
-## 必須先經過使用者同意的動作
+## Actions Requiring User Approval
 
 - 發布到 VS Code Marketplace（`vsce publish`）。目前只發布到 Marketplace，不發布到 Open VSX。
 - 修改 `~/.aws/config`、`~/.aws/credentials` 或 `~/.aws/sso/cache/`。需要登入時請使用者自己執行 `aws sso login`。
 
-## 建置、測試與驗證
+## Build, Test and Verification
 
 - 套件管理一律用 pnpm，不可執行 `npm install` 或 `yarn`，也不可產生 `package-lock.json`、`yarn.lock`。理由：使用者的偏好；多個 lockfile 並存會讓相依版本不一致。
 - 建置：`pnpm run compile`（先 `tsc --noEmit` 檢查型別，再用 esbuild 輸出 `dist/extension.js`）
@@ -28,7 +28,7 @@
 
 只和特定檔案有關的規則放在 `.github/instructions/`（改到對應檔案時自動載入）：`pricing`（費用估算）、`dependencies`（相依套件與授權）。有固定步驟的流程放在 `.github/skills/`：`update-catalog`（更新 CATALOG）、`release`（版本號、CHANGELOG、封裝 VSIX）。
 
-## 發布說明格式
+## Release Notes Format
 
 預設格式（CHANGELOG 條目風格、GitHub release 模板）在 user-level 的 `release-notes` skill；以下只記錄本專案的差異：
 
@@ -37,7 +37,7 @@
 - 連結前綴：`https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock/blob/<tag>/`。
 - 附件：`chat-model-provider-for-amazon-bedrock-<version>.vsix`。
 
-## 程式碼規範
+## Code Conventions
 
 - 不可複製三個參考 extension（`arifum.bedrock-vscode-chat`、`easytocloud.bedrock-mantle-vscode-chat`、`abhimanyus1997.bedrock-bridge-copilot`）的程式碼，只能參考做法。理由：使用者的決定。
 - Credential 一律交給 AWS SDK 的 provider（例如 `fromIni({ profile })`）處理，每次請求都透過 provider 取得。不可把 `accessKeyId`、`secretAccessKey`、`sessionToken` 存進自己的變數或快取重複使用。理由：參考 extension 在 SSO 過期後不會重新整理，就是這個原因。
@@ -49,13 +49,13 @@
 - 程式碼註解使用英文，方便國際開發者閱讀。反例：`// 取得憑證`。
 - Commit message 遵循 Conventional Commits：類型前綴用英文（`feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`build`、`ci`），冒號後的說明也用英文。正例：`feat: add Converse streaming response`；反例：`新增 Converse 串流回應`（缺少類型前綴）、`功能: add streaming`（前綴不是標準類型）。理由：業界慣例，可用工具自動產生 CHANGELOG。
 
-## 已知陷阱
+## Known Pitfalls
 
 - 不要為了「讓受限模式可用」而宣告 `capabilities.untrustedWorkspaces`：VS Code Chat 在 Restricted Mode 會自己封鎖所有模型（模型選單顯示「Models unavailable while in Restricted mode」），宣告 `limited` 也無法改變（2026-10-09 實測）。未宣告時 extension 在受限模式停用，這是預期行為，資安審查不必列為發現。
 - `bedrock-runtime` Native 路徑已實測可用 SSO profile：控制面 `list-inference-profiles` 與 runtime `ConverseStream` 都成功（2026-09-25，`us-west-2`）。
 - 在這台電腦上按 F5 時，Extension Development Host 視窗會出現 `command '...' not found`。這是假線索：真正的原因是 js-debug 連 `::1:<port>` 被拒（`ECONNREFUSED`），Extension Host 在 60 秒後逾時，所以沒有任何 extension 在執行。不要往指令註冊或 `package.json` 的方向追。確認方式：主視窗 `exthost.log` 有 `ECONNREFUSED ::1`，開發視窗 `renderer.log` 有 `Extension host did not start`。暫時改用 task「Open Extension Development Host」（`Ctrl+Shift+B`）開啟開發視窗，它會先編譯再執行 `code --new-window --extensionDevelopmentPath=<repo>`，這個方式不能設中斷點。換到個人網路後結果相同，所以和外部網路無關，不要往 VPN 或 proxy 的方向追。本機實測：`localhost` 會先解析成 `::1`，而只在 `127.0.0.1` 監聽的偵錯埠連 `::1` 會被拒。（2026-09-25 發生三次）
 
-## 規則維護
+## Rule Maintenance
 
 - 同一條規則只寫在一個地方，其他地方用名稱引用，不複製內容。
 - 每條規則都要能判斷有沒有違反，並附上理由；能寫反例就寫反例。

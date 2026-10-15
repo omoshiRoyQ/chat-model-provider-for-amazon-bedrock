@@ -79,7 +79,6 @@ describe('AmazonBedrockProvider usage attribution', () => {
     });
 });
 
-/** The rejection message was observed from Mistral 7B Instruct on 2026-10-01; resending as user text is the user's decision. */
 /** Expected behavior comes from the user's report: after the SSO token expires mid-session, the sign-in button must stay until a real AWS call succeeds. */
 describe('AmazonBedrockProvider sign-in button', () => {
     it('stays visible when VS Code re-queries a cached model list after a credential failure', async () => {
@@ -117,6 +116,7 @@ describe('AmazonBedrockProvider sign-in button', () => {
     });
 });
 
+/** The rejection message was observed from Mistral 7B Instruct on 2026-10-01; resending as user text is the user's decision. */
 describe('AmazonBedrockProvider system messages', () => {
     it('resends with the system prompt as user text when the model rejects system messages, then skips the field', async () => {
         mocks.readSettings.mockReturnValue(settings('dev'));
