@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { addUsage, currentPeriodStart, isLongContext, nextResetAt, type UsagePeriod, UsageStore } from '../src/usage';
+import { addUsage, currentPeriodStart, isLongContext, nextResetAt, totalInputTokens, type UsagePeriod, UsageStore } from '../src/usage';
 
 /**
  * Expected values come from the user's reset rules (2026-09-26): choose a day from 1 to 31 and a UTC hour;
@@ -81,6 +81,13 @@ describe('isLongContext', () => {
         expect(isLongContext(tokens(272_000, 0), 272_000)).toBe(false);
         expect(isLongContext(tokens(1, 0, 200_000, 72_000), 272_000)).toBe(true);
         expect(isLongContext(tokens(1_000_000, 0), undefined)).toBe(false);
+    });
+});
+
+describe('totalInputTokens', () => {
+    it('包含未快取輸入、快取讀取與寫入，並將舊資料缺少的快取欄位視為 0', () => {
+        expect(totalInputTokens({ inputTokens: 1, cacheReadTokens: 200_000, cacheWriteTokens: 72_000 })).toBe(272_001);
+        expect(totalInputTokens({ inputTokens: 10 })).toBe(10);
     });
 });
 

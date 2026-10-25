@@ -141,6 +141,7 @@ function renderHtml(view: UsageView, nonce: string, cspSource: string): string {
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
   button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 12px; cursor: pointer; }
   button:hover { background: var(--vscode-button-hoverBackground); }
+    button:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
   button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
 </style>
 </head>
@@ -168,8 +169,8 @@ ${rows}${empty}
 <p class="sub">${tableInfo}<br>${esc(t('Estimates only. Actual charges are shown on your AWS bill.'))}</p>
 <div class="actions">
   <button data-action="updatePrices">${esc(t('Update Prices'))}</button>
-  <button data-action="openPricingSettings" class="secondary">${esc(t('Custom Prices…'))}</button>
-  <button data-action="reset" class="secondary">${esc(t('Reset Usage…'))}</button>
+    <button data-action="openPricingSettings" class="secondary">${esc(t('Custom Prices'))}</button>
+    <button data-action="reset" class="secondary">${esc(t('Reset Usage'))}</button>
   <button data-action="showLogs" class="secondary">${esc(t('Show Logs'))}</button>
 </div>
 <script nonce="${nonce}">

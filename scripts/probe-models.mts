@@ -1,17 +1,17 @@
 // Developer check: probes tool and image support of the models listed for an AWS profile with ConverseStream requests capped
 // at maxTokens=16 (billed), skipping models probed as tools=false, already having an image result, or marked unsupported. It prints lines to paste
-// and writes the same text to .agent-launchpad/probe-models-results.txt (overwritten each run); it writes only that result file.
+// and writes the same text to .tmp/probe-models-results.txt (overwritten each run); it writes only that result file.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } from '@aws-sdk/client-bedrock';
 import { BedrockRuntimeClient, ConverseStreamCommand, type ContentBlock, type ToolConfiguration } from '@aws-sdk/client-bedrock-runtime';
 import { fromIni } from '@aws-sdk/credential-providers';
+import { fetchModelSources } from '../src/modelList.ts';
 import { PROBED_CAPABILITIES, resolveModels, type FoundationSummary, type ProfileSummary } from '../src/models.ts';
 
 // Every line printed to the terminal is also kept here so the result file holds the same text.
 const output: string[] = [];
-const PROJECT_DIR = new URL('../.agent-launchpad/', import.meta.url);
-const RESULT_FILE = new URL('probe-models-results.txt', PROJECT_DIR);
+const RESULTS_DIR = new URL('../.tmp/', import.meta.url);
+const RESULT_FILE = new URL('probe-models-results.txt', RESULTS_DIR);
 
 function say(line = '', stream: (text: string) => void = console.log): void {
     output.push(line);
@@ -19,54 +19,38 @@ function say(line = '', stream: (text: string) => void = console.log): void {
 }
 
 function saveResults(): void {
-    mkdirSync(PROJECT_DIR, { recursive: true }); // Create .agent-launchpad/ on a fresh clone so paid results are not lost at the end.
+    mkdirSync(RESULTS_DIR, { recursive: true }); // Keep paid results separate from disposable task checkpoints.
     writeFileSync(RESULT_FILE, `${output.join('\n')}\n`, 'utf8');
 }
 
 const { values: args } = parseArgs({ options: { profile: { type: 'string' }, region: { type: 'string' }, scope: { type: 'string', default: 'geo' } } });
 if (!args.profile || !args.region || (args.scope !== 'geo' && args.scope !== 'global')) {
-    console.error('用法：pnpm run probe-models --profile <name> --region <region> [--scope geo|global]');
+    console.error('Usage: pnpm run probe-models --profile <name> --region <region> [--scope geo|global]');
     process.exit(1);
 }
 const credentials = fromIni({ profile: args.profile });
 
-const profiles: ProfileSummary[] = [];
-let foundations: FoundationSummary[] = [];
-const control = new BedrockClient({ region: args.region, credentials });
+let profiles: ProfileSummary[];
+let foundations: FoundationSummary[];
 try {
-    let nextToken: string | undefined;
-    do {
-        const page = await control.send(new ListInferenceProfilesCommand({ typeEquals: 'SYSTEM_DEFINED', maxResults: 100, nextToken }));
-        profiles.push(...(page.inferenceProfileSummaries ?? []).flatMap((p) => (p.inferenceProfileId
-            ? [{ id: p.inferenceProfileId, name: p.inferenceProfileName ?? p.inferenceProfileId, active: p.status === 'ACTIVE' }]
-            : [])));
-        nextToken = page.nextToken;
-    } while (nextToken);
-    foundations = ((await control.send(new ListFoundationModelsCommand({}))).modelSummaries ?? []).flatMap((m) => (m.modelId ? [{
-        id: m.modelId,
-        name: m.modelName ?? m.modelId,
-        textOutput: m.outputModalities?.includes('TEXT') ?? false,
-        streaming: m.responseStreamingSupported ?? false,
-        onDemand: m.inferenceTypesSupported?.includes('ON_DEMAND') ?? false,
-        imageInput: m.inputModalities?.includes('IMAGE') ?? false,
-    }] : []));
+    const sources = await fetchModelSources(args.profile, args.region, { onFoundationModelsAccessDenied: 'throw' });
+    profiles = sources.profiles;
+    foundations = sources.foundations;
 } catch (error) {
-    say(`無法列出模型：${(error as Error).name}: ${(error as Error).message}\nSSO 過期時請先執行 aws sso login --profile ${args.profile}`, console.error);
+    say(`Cannot list models: ${(error as Error).name}: ${(error as Error).message}\nIf SSO has expired, run aws sso login --profile ${args.profile}`, console.error);
     saveResults();
     process.exit(1);
-} finally {
-    control.destroy();
 }
 
-// Same list the extension shows with Model Filter set to all models. Skips three kinds: tools=false, an image result, and
+// Explicitly all providers/no minimum version, independent of VS Code visibility settings. Skips tools=false, an image result, and
 // unsupported (retired or noConverse). Models with only a tools result stay in the list so the image test can fill in.
 // resolveModels gets an empty probe table so the unsupported models are still in the list here and are removed by this filter.
-const targets = resolveModels(profiles, foundations, args.scope, false, new Map(), {}).models
+const targets = resolveModels(profiles, foundations, args.scope, false, new Map(), {}, () => true).models
     .filter((m) => {
         const probed = PROBED_CAPABILITIES[m.baseId];
         return probed?.tools !== false && probed?.image === undefined && probed?.unsupported === undefined;
     });
-say(`待測 ${targets.length} 個模型（略過三種：tools=false、已有圖片結果、unsupported）；每個模型最多 3 次請求，maxTokens=16。`);
+say(`Probing ${targets.length} models (skipping tools=false, existing image results, and unsupported); at most 3 requests per model, maxTokens=16.`);
 
 const runtime = new BedrockRuntimeClient({ region: args.region, credentials });
 const TOOLS: ToolConfiguration = { tools: [{ toolSpec: { name: 'ping', description: 'Returns pong.', inputSchema: { json: { type: 'object', properties: {} } } } }] };
@@ -97,14 +81,14 @@ for (const model of targets) {
     const text: ContentBlock = { text: 'Hi' };
     const baseline = await attempt(model.invokeId, [text]);
     if (baseline) {
-        undetermined.push(`${model.baseId}（${model.invokeId}）：不帶工具與圖片也失敗，${baseline.name}: ${baseline.message}`);
+        undetermined.push(`${model.baseId} (${model.invokeId}): failed even without tools or images, ${baseline.name}: ${baseline.message}`);
         continue;
     }
     // Only ValidationException means the feature was rejected; other errors (throttling, access) leave it undetermined.
     // A model already probed tools=true skips the tools request and goes straight to the image test.
     const tool = PROBED_CAPABILITIES[model.baseId]?.tools === true ? undefined : await attempt(model.invokeId, [text], TOOLS);
     if (tool && tool.name !== 'ValidationException') {
-        undetermined.push(`${model.baseId}（${model.invokeId}）：工具測試 ${tool.name}: ${tool.message}`);
+        undetermined.push(`${model.baseId} (${model.invokeId}): tool test ${tool.name}: ${tool.message}`);
         continue;
     }
     if (tool) {
@@ -122,14 +106,14 @@ for (const model of targets) {
 runtime.destroy();
 
 say();
-say('貼進 src/models.ts 的 PROBED_CAPABILITIES：');
+say('Paste into PROBED_CAPABILITIES in src/models.ts:');
 say(`    // Probed ${new Date().toLocaleDateString('sv-SE')} with ConverseStream (${args.region}, maxTokens=16)`);
 for (const line of lines) {
     say(`    ${line}`);
 }
 if (undetermined.length > 0) {
     say();
-    say('無法判斷（不要貼進去；排除原因後重跑）：');
+    say('Undetermined (do not paste; fix the cause and rerun):');
     for (const line of undetermined) {
         say(`  ${line}`);
     }

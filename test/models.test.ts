@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { resolveModels, type FoundationSummary, type ProfileSummary } from '../src/models';
+import { modelVisibility, parseModelVisibility } from '../src/modelFilter';
 
 /**
  * Expected token limits and thinking formats come from AWS model cards (CATALOG in src/models.ts).
@@ -45,6 +47,38 @@ const foundations = [
 const ids = (r: ReturnType<typeof resolveModels>) => r.models.map((m) => m.invokeId);
 
 describe('resolveModels', () => {
+    it('loads the shared catalog/resolver in plain Node without a vscode alias or AWS calls', () => {
+        const output = execFileSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '-e', "const m = require('./src/models.ts'); console.log(m.resolveModels([], [], 'geo', false, new Map(), {}, () => true).models.length)"], { encoding: 'utf8' });
+        expect(output.trim()).toBe('0');
+    });
+    /** Company/version visibility is the user's policy; eligibility/capabilities remain the existing AWS-derived rules. */
+    it('new visibility replaces the legacy boolean and filters hidden models before card discovery', () => {
+        const policy = parseModelVisibility({ mode: 'selected', providers: ['nvidia'], minimumVersions: { gpt: '6' } }).value;
+        const r = resolveModels([], [
+            foundation('nvidia.nemotron-nano-12b-v2', 'Renamed model', { onDemand: true }),
+            foundation('openai.gpt-next', 'NVIDIA misleading name', { onDemand: true }),
+        ], 'geo', true, new Map(), undefined, (id) => modelVisibility(id, policy).visible);
+        expect(r.models.map((m) => m.baseId)).toEqual(['nvidia.nemotron-nano-12b-v2']);
+        expect(r.unknownIds).toEqual(['nvidia.nemotron-nano-12b-v2']);
+        expect(r.models[0]).toMatchObject({ imageInput: true, thinking: 'none', promptCache: false });
+    });
+    it('profiles-only visibility retains known/unknown GPT above the threshold but not retired/tool/native exclusions', () => {
+        const policy = parseModelVisibility({ mode: 'all', providers: [], minimumVersions: { gpt: '6', claude: '4.6' } }).value;
+        const bases = ['openai.gpt-5.6-luna', 'openai.gpt-6-luna', 'openai.gpt-next', 'openai.gpt-5.4', 'anthropic.claude-3-haiku-20240307-v1:0', 'deepseek.r1-v1:0', 'amazon.nova-2-sonic-v1:0'];
+        const r = resolveModels(bases.map((id) => profile(`us.${id}`, 'US Renamed')), [], 'geo', false, new Map(), undefined, (id) => modelVisibility(id, policy).visible);
+        expect(r.models.map((m) => m.baseId)).toEqual(['openai.gpt-6-luna', 'openai.gpt-next']);
+        expect(r.unknownIds).toEqual(['openai.gpt-next']);
+    });
+    it('visibility does not override Native, retired, non-text or tools eligibility', () => {
+        const bases = ['openai.gpt-5.4', 'anthropic.claude-3-haiku-20240307-v1:0', 'deepseek.r1-v1:0', 'amazon.nova-2-sonic-v1:0', 'cohere.embed-v4:0'];
+        expect(resolveModels(bases.map((id) => profile(`us.${id}`)), [foundation('cohere.embed-v4:0', 'Embed', { textOutput: false })], 'geo', false, new Map(), undefined, () => true).models).toEqual([]);
+    });
+    it.each(['geo', 'global'] as const)('preserves scope and catalog capabilities with a visibility callback (%s)', (scope) => {
+        const policy = parseModelVisibility({ mode: 'selected', providers: ['anthropic'], minimumVersions: { claude: '4.6' } }).value;
+        const r = resolveModels(profiles, foundations, scope, false, new Map(), undefined, (id) => modelVisibility(id, policy).visible);
+        expect(r.models.find((m) => m.baseId === OPUS_55)).toMatchObject({ invokeId: `${scope === 'global' ? 'global' : 'us'}.${OPUS_55}`, contextWindow: 1_000_000, maxOutputTokens: 128_000, imageInput: true, promptCache: true, thinking: 'adaptiveAlways' });
+        expect(r.models.find((m) => m.baseId === OPUS_41)).toBeUndefined();
+    });
     it('geo：用地理區 profile，只有 global profile 的模型不列出', () => {
         const r = resolveModels(profiles, foundations, 'geo', true);
         expect(ids(r)).toContain(

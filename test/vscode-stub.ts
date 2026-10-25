@@ -47,9 +47,34 @@ export enum LanguageModelChatToolMode {
 }
 
 export const workspace = {
+    getConfiguration(_section?: string) {
+        return {
+            get<T>(_key: string): T | undefined { return undefined; },
+            inspect<T>(_key: string): { key: string; defaultValue?: T; globalValue?: T; workspaceValue?: T; workspaceFolderValue?: T } | undefined { return undefined; },
+            async update(_key: string, _value: unknown, _target?: ConfigurationTarget): Promise<void> { },
+        };
+    },
     onDidChangeConfiguration(_listener: unknown) {
         return { dispose() { } };
     },
+};
+
+export enum ConfigurationTarget {
+    Global = 1,
+    Workspace = 2,
+    WorkspaceFolder = 3,
+}
+
+export const window = {
+    async showQuickPick(_items: unknown, _options?: unknown): Promise<unknown> { return undefined; },
+    async showInputBox(_options?: unknown): Promise<string | undefined> { return undefined; },
+    async showWarningMessage(_message: string, ..._items: string[]): Promise<string | undefined> { return undefined; },
+    async showErrorMessage(_message: string, ..._items: string[]): Promise<string | undefined> { return undefined; },
+    async showInformationMessage(_message: string, ..._items: string[]): Promise<string | undefined> { return undefined; },
+};
+
+export const commands = {
+    async executeCommand(_command: string, ..._args: unknown[]): Promise<unknown> { return undefined; },
 };
 
 /** Matches vscode.l10n.t by replacing {0}, {1}, etc. with arguments; tests have no translation files, so it returns the English source string. */

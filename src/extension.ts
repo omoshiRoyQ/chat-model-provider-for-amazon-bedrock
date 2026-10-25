@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelCardStore } from './modelCardStore';
+import { pickModelVisibility } from './modelFilter';
+import { pickModelPresets } from './modelPresets';
 import type { ResolvedModel } from './models';
 import { PriceStore } from './priceStore';
 import { AmazonBedrockProvider } from './provider';
@@ -8,7 +10,7 @@ import { SsoSignIn } from './signIn';
 import { effortLabel, SignInStatusBar, ThinkingStatusBar, TokenStatusBar } from './statusBar';
 import { THINKING_EFFORTS } from './thinking';
 import { ThinkingStore } from './thinkingStore';
-import { isLongContext, nextResetAt, UsageStore } from './usage';
+import { isLongContext, nextResetAt, totalInputTokens, UsageStore } from './usage';
 import { UsagePanel } from './usagePanel';
 import { buildUsageView } from './usageView';
 
@@ -46,7 +48,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const baseId = resolved?.baseId ?? id.replace(/^[a-z]+\.(?=[a-z]+\.)/, '');
             const longContext = isLongContext(usage, resolved?.longContextThreshold);
             if (longContext) {
-                const total = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+                const total = totalInputTokens(usage);
                 log.info(`model=${id} long-context request: total input ${total} > threshold ${resolved?.longContextThreshold}`);
             }
             void usageStore
@@ -85,7 +87,7 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             // Model-card prices cover models missing from the price file (most GPT models as of 2026-10-04).
             const [tableResult, cardResult] = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Downloading Amazon Bedrock prices for {0}…', region) },
+                { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Downloading Amazon Bedrock prices for {0}', region) },
                 () => Promise.allSettled([priceStore.download(region), modelCards.refresh([], Date.now(), true)]),
             );
             if (cardResult.status === 'fulfilled') {
@@ -132,7 +134,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     async function pickThinkingEffort(): Promise<void> {
         const choices = provider.models.filter((m) => m.thinking !== 'none');
-        const resetAllLabel = vscode.l10n.t('Reset all models to Default…');
+        const resetAllLabel = vscode.l10n.t('Reset all models to Default');
         const items: (vscode.QuickPickItem & { model?: ResolvedModel; resetAll?: boolean })[] = [
             ...choices.map((model) => ({
                 label: model.name,
@@ -183,6 +185,8 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('amazonBedrockProvider.signIn', () => provider.signIn()),
         vscode.commands.registerCommand('amazonBedrockProvider.showUsage', () => panel.show(currentView())),
         vscode.commands.registerCommand('amazonBedrockProvider.pickThinkingEffort', () => pickThinkingEffort()),
+        vscode.commands.registerCommand('amazonBedrockProvider.pickModelVisibility', () => pickModelVisibility(() => vscode.workspace.getConfiguration(CONFIG_SECTION), log)),
+        vscode.commands.registerCommand('amazonBedrockProvider.manageModelPresets', () => pickModelPresets(() => vscode.workspace.getConfiguration(CONFIG_SECTION), () => provider.models, log)),
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration(CONFIG_SECTION)) {
                 refreshAfterSettingsChange();

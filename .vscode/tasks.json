@@ -2,6 +2,22 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Open Extension Development Host",
+            "type": "shell",
+            "command": "pnpm run dev",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "pnpm: compile",
             "type": "shell",
             "command": "pnpm run compile",
@@ -9,26 +25,6 @@
             "problemMatcher": [
                 "$tsc"
             ]
-        },
-        {
-            // F5 在這台電腦會因偵錯工具連 ::1 被拒而逾時（見 AGENTS.md「已知陷阱」），
-            // 改用這個 task 開啟開發視窗：先編譯，再以不接偵錯工具的方式開新視窗。不能設中斷點。
-            "label": "Open Extension Development Host",
-            "type": "shell",
-            "command": "code",
-            "args": [
-                "--new-window",
-                "--extensionDevelopmentPath=${workspaceFolder}"
-            ],
-            "dependsOn": "pnpm: compile",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "reveal": "silent"
-            },
-            "problemMatcher": []
         }
     ]
 }

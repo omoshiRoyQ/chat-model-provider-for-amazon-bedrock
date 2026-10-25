@@ -2,7 +2,7 @@
   "name": "chat-model-provider-for-amazon-bedrock",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "1.4.1",
+  "version": "2.0.0",
   "publisher": "omoshiRoyQ",
   "icon": "icon.png",
   "license": "MIT",
@@ -58,6 +58,16 @@
         "command": "amazonBedrockProvider.pickThinkingEffort",
         "title": "%command.pickThinkingEffort.title%",
         "category": "%command.category%"
+      },
+      {
+        "command": "amazonBedrockProvider.pickModelVisibility",
+        "title": "%command.pickModelVisibility.title%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "amazonBedrockProvider.manageModelPresets",
+        "title": "%command.manageModelPresets.title%",
+        "category": "%command.category%"
       }
     ],
     "configuration": {
@@ -66,25 +76,14 @@
         "amazonBedrockProvider.profile": {
           "type": "string",
           "default": "",
+          "order": 1,
           "markdownDescription": "%config.profile.description%"
         },
         "amazonBedrockProvider.region": {
           "type": "string",
           "default": "",
+          "order": 2,
           "markdownDescription": "%config.region.description%"
-        },
-        "amazonBedrockProvider.modelFilter": {
-          "type": "string",
-          "enum": [
-            "claudeAndGpt",
-            "all"
-          ],
-          "enumItemLabels": [
-            "%config.modelFilter.claudeAndGpt%",
-            "%config.modelFilter.all%"
-          ],
-          "default": "claudeAndGpt",
-          "markdownDescription": "%config.modelFilter.description%"
         },
         "amazonBedrockProvider.inferenceScope": {
           "type": "string",
@@ -97,13 +96,134 @@
             "%config.inferenceScope.global%"
           ],
           "default": "geo",
+          "order": 3,
           "markdownDescription": "%config.inferenceScope.description%"
+        },
+        "amazonBedrockProvider.modelVisibility": {
+          "type": "object",
+          "scope": "window",
+          "order": 4,
+          "default": {
+            "mode": "selected",
+            "providers": [
+              "anthropic",
+              "openai"
+            ],
+            "minimumVersions": {}
+          },
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "providers"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "all",
+                "selected"
+              ]
+            },
+            "providers": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "amazon",
+                  "anthropic",
+                  "cohere",
+                  "deepseek",
+                  "google",
+                  "meta",
+                  "minimax",
+                  "mistral",
+                  "moonshot",
+                  "nvidia",
+                  "openai",
+                  "qwen",
+                  "twelvelabs",
+                  "writer",
+                  "xai",
+                  "zai",
+                  "other"
+                ]
+              }
+            },
+            "minimumVersions": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "claude": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*(\\.(0|[1-9][0-9]*))*(?![\\s\\S])"
+                },
+                "gpt": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*(\\.(0|[1-9][0-9]*))*(?![\\s\\S])"
+                },
+                "grok": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*(\\.(0|[1-9][0-9]*))*(?![\\s\\S])"
+                }
+              }
+            }
+          },
+          "markdownDescription": "%config.modelVisibility.description%"
+        },
+        "amazonBedrockProvider.modelPresets": {
+          "type": "array",
+          "scope": "window",
+          "order": 5,
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "modelId",
+              "route",
+              "effort"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "route": {
+                "type": "string",
+                "enum": [
+                  "Geo",
+                  "Global",
+                  "In-Region"
+                ]
+              },
+              "effort": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "off",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            }
+          },
+          "markdownDescription": "%config.modelPresets.description%"
         },
         "amazonBedrockProvider.usageResetDay": {
           "type": "integer",
           "minimum": 1,
           "maximum": 31,
           "default": 1,
+          "order": 6,
           "markdownDescription": "%config.usageResetDay.description%"
         },
         "amazonBedrockProvider.usageResetHour": {
@@ -111,11 +231,13 @@
           "minimum": 0,
           "maximum": 23,
           "default": 0,
+          "order": 7,
           "markdownDescription": "%config.usageResetHour.description%"
         },
         "amazonBedrockProvider.customPricing": {
           "type": "object",
           "default": {},
+          "order": 8,
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -147,25 +269,29 @@
     }
   },
   "scripts": {
-    "compile": "pnpm run check-types && node esbuild.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "compile": "pnpm run typecheck && node esbuild.mjs",
+    "dev": "pnpm run compile && node scripts/dev-host.mjs",
     "watch": "node esbuild.mjs --watch",
-    "check-types": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "check-licenses": "node scripts/check-third-party-notices.mjs",
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "check:l10n": "node scripts/check-l10n.mjs",
+    "check": "pnpm run check:licenses && pnpm run check:l10n",
     "check-model-cards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-model-cards.mts",
     "probe-models": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/probe-models.mts",
-    "vsix": "pnpm run check-licenses && vsce package --no-dependencies",
-    "vsix:ls": "vsce ls --no-dependencies",
-    "package": "pnpm run check-types && pnpm run check-licenses && node esbuild.mjs --production",
-    "vscode:prepublish": "pnpm run package"
+    "vscode:prepublish": "pnpm run typecheck && pnpm run check && node esbuild.mjs --production",
+    "package": "vsce package --no-dependencies",
+    "package:verified": "pnpm run test && pnpm run package && pnpm run package:ls",
+    "package:ls": "vsce ls --no-dependencies",
+    "verify": "pnpm run compile && pnpm test && pnpm run check && pnpm run package:ls"
   },
   "devDependencies": {
-    "@types/node": "^22.20.4",
-    "@types/vscode": "~1.106.1",
+    "@types/node": "22.20.4",
+    "@types/vscode": "1.106.1",
     "@vscode/vsce": "4.0.0",
-    "esbuild": "^0.28.2",
-    "typescript": "^7.0.2",
-    "vitest": "5.0.2"
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1140.0",

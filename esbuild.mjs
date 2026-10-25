@@ -10,7 +10,8 @@ const ctx = await esbuild.context({
     bundle: true,
     format: 'cjs',
     platform: 'node',
-    target: 'node20',
+    // VS Code 1.106.0 uses Electron 37.7.0 / Node 22.20.0; remote/.npmrc also targets Node 22.20.0.
+    target: 'node22',
     outfile: 'dist/extension.js',
     external: ['vscode'],
     minify: production,

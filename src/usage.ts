@@ -81,12 +81,21 @@ function resetIfDue(period: UsagePeriod, now: Date): UsagePeriod {
     };
 }
 
+/** Total input includes cache reads and writes; optional fields support usage saved before cache tracking. */
+export function totalInputTokens(usage: {
+    readonly inputTokens: number;
+    readonly cacheReadTokens?: number;
+    readonly cacheWriteTokens?: number;
+}): number {
+    return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+}
+
 /**
  * Whether long-context prices apply to a request. Total input (uncached + cache read + cache write, per AWS prompt-caching docs)
  * is compared with the threshold; the model cards only say "more than 272K input tokens".
  */
 export function isLongContext(usage: TokenUsage, threshold: number | undefined): boolean {
-    return threshold !== undefined && usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens > threshold;
+    return threshold !== undefined && totalInputTokens(usage) > threshold;
 }
 
 function addCounts(prev: Partial<UsageCounts> | undefined, usage: TokenUsage): UsageCounts {

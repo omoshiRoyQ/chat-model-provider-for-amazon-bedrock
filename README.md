@@ -9,9 +9,10 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
 ## Features
 
 - Loads available Bedrock models from your AWS account and supports geographic or global inference-profile routing.
-- Supports Claude, GPT, and other eligible models, with a filter for Claude and GPT or all eligible models.
+- Filters eligible models by provider and model family, such as Anthropic (Claude), OpenAI (GPT and GPT-OSS), xAI (Grok), and NVIDIA (Nemotron). You can set minimum versions for Claude, regular GPT, and Grok; models with unknown versions remain visible and are marked when a minimum applies.
 - Supports Chat Agent tool calling and image input for models that support it.
 - Lets you set thinking effort per model. Unsupported settings may be adjusted by the extension or rejected by Bedrock.
+- Lets you create additional Chat models with a fixed thinking effort for models with configurable thinking; the original model remains available. Preset names are generated from the base model's display name, effort, and fixed route, for example `Luna-Medium (Geo)`.
 - Shows this period's input and output tokens in the status bar, and per-model request counts, tokens (including prompt cache reads and writes), and estimated costs in the usage panel.
 - Uses Bedrock prompt caching for Claude models that support it, so repeated conversation context can be read from the cache.
 - Lets you update the price table, set custom prices, and configure the monthly usage reset day and UTC hour.
@@ -47,9 +48,9 @@ Without `bedrock:ListFoundationModels`, chat still works, with these differences
 
 - **Images**: For each model, the extension uses the first available source: built-in image test results, then the `inputModalities` reported by `bedrock:ListFoundationModels`. If neither is available, the model accepts image attachments, and if it does not support images, you see an error after sending. Models known not to support images do not receive images; the extension sends a text note instead. Images returned by agent tools, such as screenshots, follow the same rules.
 - **Model list**: Only models whose IDs start with a prefix such as `us.` or `global.` are listed. Models that can be called only by their plain model ID, such as `openai.gpt-oss-20b-1:0`, do not appear.
-- **When Model Filter shows all models**: Models that cannot chat, such as image generation and embedding models, also appear in the picker.
+- **When Model Visibility selects all providers**: Models that cannot chat, such as image generation and embedding models, also appear in the picker.
 
-With the default Claude and GPT filter, the main difference is image support.
+With the default Anthropic and OpenAI selection, the main difference is image support.
 
 Some third-party Marketplace models also require `aws-marketplace:ViewSubscriptions` and `aws-marketplace:Subscribe`, as well as a completed subscription for the model. Ask your AWS administrator to scope resource ARNs and conditions to your models, region, and organization policies.
 
@@ -64,7 +65,51 @@ If the first command fails, the model list cannot be loaded. If only the second 
 
 ## Settings
 
-- **Model Filter**: Show only Claude and GPT, or all eligible models.
+- **Model Visibility**: Use **Configure Model Visibility** or edit `amazonBedrockProvider.modelVisibility` in Settings (JSON). The default selects Anthropic and OpenAI with no minimum version. Provider groups show their model families, such as Anthropic (Claude), OpenAI (GPT, GPT-OSS, GPT-OSS Safeguard), xAI (Grok), and NVIDIA (Nemotron). In `all` mode, future providers are included; in `selected` mode, an empty `providers` array selects no providers. The menu asks for a minimum version only for the providers you select; saving removes thresholds for unselected providers. Existing Bedrock and Chat eligibility rules still apply.
+
+  The legacy `amazonBedrockProvider.modelFilter` setting was removed in version 2.0.0. If it was set to `all`, set `amazonBedrockProvider.modelVisibility` to `{"mode":"all","providers":[]}` to retain the all-providers behavior. Otherwise, the default is Anthropic and OpenAI with no minimum version.
+
+  Optional `minimumVersions` thresholds are inclusive and apply to Claude, regular GPT, and Grok. Setting a GPT threshold also hides GPT-OSS and Safeguard models. When a model's version cannot be interpreted, it remains visible and is marked as unknown, so a minimum version does not guarantee that every listed model meets that threshold. For example:
+
+  ```json
+  {
+    "amazonBedrockProvider.modelVisibility": {
+      "mode": "selected",
+      "providers": ["anthropic", "openai", "xai"],
+      "minimumVersions": {
+        "claude": "4.6",
+        "gpt": "6",
+        "grok": "4.7"
+      }
+    }
+  }
+  ```
+
+- **Model Presets**: Use **Manage Model Presets** to add a preset from a currently listed model and route, change its effort, remove it, or open Settings (JSON). The original model's settings are unchanged. The menu and JSON share `amazonBedrockProvider.modelPresets`. Each entry has an `id`, a foundation model `modelId`, a fixed `route` (`Geo`, `Global`, or `In-Region`), and an `effort` (`default`, `off`, `low`, `medium`, `high`, `xhigh`, or `max`). The menu generates a UUID for each new preset and generates the Chat display name from the base model name, effort, and route; the name is not stored or editable.
+
+  ```json
+  {
+    "amazonBedrockProvider.modelPresets": [
+      {
+        "id": "f603514d-c89f-4b7e-9c11-9255b4658467",
+        "modelId": "openai.gpt-6-luna",
+        "route": "Geo",
+        "effort": "medium"
+      },
+      {
+        "id": "31e8bb3c-40b6-4b0d-9163-1772b145941e",
+        "modelId": "openai.gpt-6-luna",
+        "route": "Geo",
+        "effort": "max"
+      }
+    ]
+  }
+  ```
+
+  A missing setting or an empty array means there are no presets. Workspace settings replace the User array completely; the menu edits User settings only and directs you to workspace Settings (JSON) when a workspace override is active. Duplicate IDs and duplicate model/route/effort combinations are rejected. A preset is listed only while its base model is available in the exact saved route and passes model visibility filtering. Changing the inference scope never reroutes a preset. If its model or route is temporarily unavailable, the preset is hidden but its setting is retained and it reappears when available again.
+
+  A preset always uses its saved effort, independently of the base model's **Set Thinking Effort** value or **Reset All**. Unsupported effort values follow the existing request handling; defining a preset does not confirm that Bedrock accepts the effort.
+
 - **Inference Scope**: `geo` uses a geographic inference profile and hides models that offer only a global profile. `global` prefers a global profile, which may route requests to AWS Regions worldwide, and falls back to the geographic profile when a model has no global profile.
 - **Usage Reset Day / Hour**: Set the monthly reset day (1–31) and UTC hour (0–23). If a month does not have the selected day, usage resets on the month's last day. Changing the schedule does not immediately clear usage; it resets at the next reset time under the new schedule.
 - **Custom Pricing**: Set USD prices per million tokens by model ID. Custom prices take precedence over the downloaded price table. `cacheRead` and `cacheWrite` are optional prompt cache prices; without them, costs for requests that read or write the prompt cache are not estimated. For example:
@@ -81,6 +126,8 @@ If the first command fails, the model list cannot be loaded. If only the second 
 ## Usage and Costs
 
 Input and output token usage reported by Bedrock is accumulated by AWS profile, model, and inference route. Costs are estimates, not AWS billing data; actual charges are shown on your AWS bill. **Update Prices** downloads the public AWS price list and the price tables on AWS model cards. Prices come from your custom prices first, then the price list, then the model cards, so GPT models missing from the price list are still estimated; the cost column marks model card prices with **model card**. Models without any of these prices show **No price data**.
+
+Preset requests are recorded and priced under the underlying model and route, so they are grouped with usage from the original model on that route. The selected effort can affect the token counts reported by Bedrock; it does not add a separate price or change the cost-estimation rules.
 
 Some GPT models charge long-context prices for the whole request when its input exceeds 272K tokens (as stated on their model cards), and Claude Haiku 5.5 does the same above 100K tokens (as stated on Anthropic's pricing page; the AWS model card gives no threshold). The extension classifies each request when it is recorded, counting cache reads and writes as input, and prices those requests with the long-context rates. Usage recorded before this version is priced at standard rates. Custom prices have no long-context tier, so a model with long-context requests and only custom prices shows **No long-context price**.
 
@@ -136,6 +183,16 @@ The source code is available on [GitHub](https://github.com/omoshiRoyQ/chat-mode
 - **Model invocation is denied**: Check that the profile has `bedrock:InvokeModelWithResponseStream` and that the model is available in the selected region and inference scope. Marketplace models may also require subscription permissions.
 - **SSO sign-in has expired**: Select the Bedrock sign-in button or run `aws sso login --profile <profile>`, then resend the failed Chat request.
 - **Detailed diagnostics**: Run **Show Logs** from the Command Palette. Redact personal information and verification details before sharing logs.
+
+## Development
+
+Run `pnpm run dev` from the project root, or use `Ctrl+Shift+B` to run the default **Open Extension Development Host** task. Both compile once, then use the VS Code CLI to open a non-debug Extension Development Host for this project. Make sure the `code` CLI is available on `PATH`. These entry points do not run unit tests or watch for changes; rerun after editing.
+
+## Build a VSIX
+
+Run `pnpm run package:verified` to run all unit tests, then package the extension and list the package contents. Packaging automatically runs `vscode:prepublish` for type checking, license and localization checks, and the production build. Each prerequisite runs once; a failure stops subsequent steps. The VSIX is written to the project root as `chat-model-provider-for-amazon-bedrock-<version>.vsix`.
+
+`pnpm run verify` runs the full checks without generating a VSIX. `pnpm run package` remains the packaging-only entry point with automatic prepublish checks; it does not run unit tests. Security review, release audit, and testing the installed VSIX remain separate. These scripts do not install or publish the extension or call Bedrock models. If a run fails, do not mistake an older VSIX for a new build.
 
 ## License
 

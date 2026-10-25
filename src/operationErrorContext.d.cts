@@ -1,0 +1,1 @@
+export function withOperationContext(error: unknown, operation: string, region?: string): Error;

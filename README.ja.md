@@ -9,9 +9,10 @@
 ## 機能
 
 - AWS アカウントから利用可能な Bedrock モデルを取得し、地理的またはグローバルな推論プロファイルを選択できます。
-- Claude、GPT などの対象モデルを利用できます。Claude と GPT のみ、または対象モデルすべてを表示できます。
+- Claude、GPT などの対象モデルを利用できます。プロバイダーで絞り込み、Anthropic（Claude）、OpenAI（GPT、GPT-OSS）、xAI（Grok）、NVIDIA（Nemotron）などのモデルシリーズを確認できます。Claude、通常の GPT、Grok にはそれぞれ最低バージョンを設定でき、バージョン不明のモデルは表示を維持し、下限の適用時に示します。
 - 対応モデルでは Chat Agent の tool calling と画像入力を利用できます。
 - モデルごとに thinking effort を設定できます。未対応の設定は extension 側で調整されるか、Bedrock に拒否される場合があります。
+- thinking を設定できるモデルには、固定 effort の追加 Chat モデルを作成できます。元のモデルも引き続き利用できます。プリセット名はベースモデルの表示名、effort、固定ルートから自動生成されます（例：`Luna-Medium (Geo)`）。
 - ステータスバーに今期の入力／出力 token 数を、使用量パネルにモデルごとのリクエスト数、token 数（プロンプトキャッシュの読み取りと書き込みを含む）、推定費用を表示します。
 - プロンプトキャッシュに対応した Claude モデルでは Bedrock の prompt caching を使用し、繰り返し送信される会話内容をキャッシュから読み取れるようにします。
 - 価格表の更新、独自価格の設定、月次使用量リセットの日付と UTC 時刻の設定ができます。
@@ -47,9 +48,9 @@
 
 - **画像**：モデルごとに、利用可能な最初の情報源を採用します。extension に組み込まれた画像の実測結果、次に `bedrock:ListFoundationModels` が返す `inputModalities`。どちらも情報がない場合、そのモデルは画像の添付を許可します。モデルが画像に対応していない場合は、送信後にエラーが表示されます。画像非対応と判断されたモデルには画像が送信されず、extension が代わりにテキストの注記を送ります。Agent の tool が返す画像（スクリーンショットなど）も同じ規則に従います。
 - **モデル一覧**：ID が `us.` や `global.` などのプレフィックスで始まるモデルのみ表示されます。モデル ID で直接呼び出すしかないモデル（例：`openai.gpt-oss-20b-1:0`）は表示されません。
-- **Model Filter ですべてのモデルを表示する場合**：画像生成や embedding など、会話できないモデルも選択肢に表示されます。
+- **Model Visibility ですべてのプロバイダーを表示する場合**：画像生成や embedding など、会話できないモデルも選択肢に表示されます。
 
-既定の Claude と GPT のみの表示では、主な違いは画像の扱いだけです。
+既定の Anthropic と OpenAI のみを選択した状態では、主な違いは画像の扱いだけです。
 
 一部のサードパーティ Marketplace モデルでは、`aws-marketplace:ViewSubscriptions` と `aws-marketplace:Subscribe` に加え、そのモデルのサブスクリプションが必要です。resource ARN と条件は、利用するモデル、リージョン、組織のポリシーに合わせて AWS 管理者が設定してください。
 
@@ -64,7 +65,51 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 
 ## 設定
 
-- **Model Filter**：Claude と GPT のみ、または対象モデルすべてを表示します。
+- **Model Visibility**：**モデル表示フィルターを設定** コマンドを使うか、設定 JSON で `amazonBedrockProvider.modelVisibility` を編集します。既定では Anthropic と OpenAI を選択し、バージョンの下限はありません。プロバイダーのグループには、Anthropic（Claude）、OpenAI（GPT、GPT-OSS、GPT-OSS Safeguard）、xAI（Grok）、NVIDIA（Nemotron）などのモデルシリーズが表示されます。`all` モードでは将来追加されるプロバイダーも含み、`selected` モードで `providers` が空配列の場合はプロバイダーを何も選択しません。メニューで最低バージョンを尋ねるのは、選択したプロバイダーの分だけです。保存時に、選択していないプロバイダーに設定済みの下限を削除します。モデルは引き続き Bedrock と Chat の既存の条件を満たす必要があります。
+
+  バージョン 2.0.0 で従来の `amazonBedrockProvider.modelFilter` を削除しました。以前 `all` を設定していた場合、すべてのプロバイダーを表示し続けるには `amazonBedrockProvider.modelVisibility` を `{"mode":"all","providers":[]}` に設定してください。それ以外の場合は、既定で Anthropic と OpenAI をバージョン制限なしで表示します。
+
+  省略可能な `minimumVersions` は、Claude、通常の GPT、Grok に指定バージョンを含む下限を設定します。GPT の下限を設定すると、GPT-OSS と Safeguard のモデルも非表示になります。モデルのバージョン形式を判読できない場合は表示を維持し「バージョン不明」と示します。そのため、最低バージョンを設定しても、一覧のすべてのモデルがその下限を満たすとは限りません。例：
+
+  ```json
+  {
+    "amazonBedrockProvider.modelVisibility": {
+      "mode": "selected",
+      "providers": ["anthropic", "openai", "xai"],
+      "minimumVersions": {
+        "claude": "4.6",
+        "gpt": "6",
+        "grok": "4.7"
+      }
+    }
+  }
+  ```
+
+- **Model Presets**：**モデルプリセットを管理** コマンドで、現在一覧にある thinking 対応モデルとルートからプリセットを追加したり、effort を変更したり、削除したり、設定 JSON を開いたりできます。元のモデル設定は変更されません。メニューと JSON は `amazonBedrockProvider.modelPresets` を共有します。各項目には `id`、foundation model の `modelId`、固定ルート（`Geo`、`Global`、`In-Region`）、`effort`（`default`、`off`、`low`、`medium`、`high`、`xhigh`、`max`）を指定します。メニューで新規作成すると UUID が生成され、Chat の表示名はベースモデル名、effort、ルートから自動生成されます。表示名は保存も編集もできません。
+
+  ```json
+  {
+    "amazonBedrockProvider.modelPresets": [
+      {
+        "id": "f603514d-c89f-4b7e-9c11-9255b4658467",
+        "modelId": "openai.gpt-6-luna",
+        "route": "Geo",
+        "effort": "medium"
+      },
+      {
+        "id": "31e8bb3c-40b6-4b0d-9163-1772b145941e",
+        "modelId": "openai.gpt-6-luna",
+        "route": "Geo",
+        "effort": "max"
+      }
+    ]
+  }
+  ```
+
+  未設定または空配列はプリセットなしを意味します。ワークスペース設定は User 配列全体を置き換えます。管理コマンドが編集するのは User 設定のみです。ワークスペースで上書きされている場合は、ワークスペースの設定 JSON を開くよう案内します。重複した `id`、または `modelId`、route、effort がすべて同一の項目は拒否されます。プリセットは、保存した route と同じ route でベースモデルが現在利用可能で、モデル表示フィルターも通過する場合にのみ表示されます。推論範囲を変更しても、プリセットの route は切り替わりません。ベースモデルまたは route が一時的に利用できない場合、プリセットは非表示になりますが設定は保持され、再び利用可能になると表示されます。
+
+  プリセットは常に保存した effort を使用し、ベースモデルの thinking effort 設定や **Reset All** の影響を受けません。未対応の effort は既存のリクエスト処理に従って調整されるか Bedrock に拒否されます。プリセットを作成しても、Bedrock がその effort を受け付けるとは限りません。
+
 - **Inference Scope**：`geo` は地理的推論プロファイルを使用し、グローバルプロファイルしかないモデルは表示されません。`global` はグローバルプロファイルを優先し、世界中の AWS リージョンにリクエストがルーティングされる場合があります。グローバルプロファイルがないモデルは地理的プロファイルを使用します。
 - **Usage Reset Day／Hour**：月次リセットの日（1～31）と UTC 時刻（0～23）を設定します。その月に指定日がない場合は月末にリセットします。スケジュールを変更しても使用量はすぐに消去されず、新しいスケジュールの次回リセット時に消去されます。
 - **Custom Pricing**：モデル ID ごとに、100 万 token あたりの米ドル価格を設定します。独自価格はダウンロードした価格表より優先されます。`cacheRead` と `cacheWrite` は省略可能なプロンプトキャッシュの価格です。省略した場合、プロンプトキャッシュを読み書きしたリクエストの費用は推定しません。例：
@@ -81,6 +126,8 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 ## 使用量と費用
 
 Bedrock が返す入力／出力 token 数を AWS プロファイル、モデル、推論 route ごとに累計します。費用は推定値で、AWS の請求額ではありません。実際の料金は AWS の請求書で確認してください。**価格を更新** を選択すると、AWS 公開価格表と AWS モデルカードの価格表をダウンロードします。単価は独自価格、公開価格表、モデルカードの順に取得するため、公開価格表にない GPT モデルも費用を推定できます。モデルカードの価格を使った費用には **モデルカード** と表示されます。いずれにも価格がないモデルは **価格データなし** と表示されます。
+
+プリセットのリクエストはベースモデルと route に記録され、その route の元モデルの使用量と一緒に集計・価格計算されます。選択した effort によって Bedrock が返す token 数は変わる場合がありますが、別の価格体系は追加されず、費用の推定方法も変わりません。
 
 一部の GPT モデルでは、1 回のリクエストの入力が 272K token を超えると、リクエスト全体にロングコンテキスト価格が適用されます（各モデルカードの記載による）。Claude Haiku 5.5 も 100K token を超えると同様です（Anthropic の価格ページの記載による。AWS のモデルカードには境界値の記載がありません）。extension はリクエストを記録するたびに、キャッシュの読み取りと書き込みも入力に含めて判定し、超えたリクエストはロングコンテキストの単価で計算します。このバージョンより前に記録された使用量は通常の単価で計算します。独自価格にはロングコンテキストの区分がないため、ロングコンテキストのリクエストがあり独自価格しかないモデルは **ロングコンテキスト価格なし** と表示されます。
 
@@ -136,6 +183,16 @@ VS Code 自体の telemetry は VS Code の `telemetry.telemetryLevel` 設定に
 - **モデル呼び出しが拒否される**：プロファイルに `bedrock:InvokeModelWithResponseStream` があり、モデルが選択したリージョンと推論範囲で利用可能か確認してください。Marketplace モデルではサブスクリプション権限も必要な場合があります。
 - **SSO のサインイン期限が切れた**：Bedrock のサインインボタンを選択するか、`aws sso login --profile <profile>` を実行してから、失敗した Chat リクエストを再送してください。
 - **詳細な診断情報**：コマンドパレットから **ログを表示** を実行してください。ログを共有する前に個人情報と検証情報を伏せてください。
+
+## 開発
+
+プロジェクトのルートで `pnpm run dev` を実行するか、`Ctrl+Shift+B` で既定の **Open Extension Development Host** task を実行します。どちらも最初に一度ビルドし、その後 VS Code CLI でこのプロジェクトの非デバッグ Extension Development Host を開きます。`code` CLI が `PATH` から利用できることを確認してください。単体テストは実行せず、ファイルの変更も監視しないため、編集後は再実行してください。
+
+## VSIX の生成
+
+`pnpm run package:verified` は、すべての単体テスト、拡張機能のパッケージ化、パッケージ内容の一覧表示を順に実行します。パッケージ化時には `vscode:prepublish` が自動実行され、型チェック、ライセンスとローカライズのチェック、本番ビルドを行います。各前提処理は一度だけ実行され、失敗すると後続の処理は停止します。VSIX はプロジェクトのルートに `chat-model-provider-for-amazon-bedrock-<version>.vsix` として生成されます。
+
+`pnpm run verify` は VSIX を生成せずに全体をチェックします。`pnpm run package` はパッケージ化のみの入口として残り、prepublish を自動実行しますが単体テストは実行しません。セキュリティレビュー、リリース監査、インストールした VSIX の検証は別途必要です。これらのスクリプトはインストールや公開、Bedrock モデルの呼び出しを行いません。失敗時は、以前の VSIX を今回の生成物と取り違えないでください。
 
 ## ライセンス
 

@@ -396,6 +396,17 @@ describe('converseCacheModelIds', () => {
     it('returns undefined when the table is missing', () => {
         expect(converseCacheModelIds('no table')).toBeUndefined();
     });
+
+    it('skips earlier tables that mention Model ID but do not have the prompt-cache header', () => {
+        const markdown = `
+| Model ID | Notes |
+| --- | --- |
+| vendor.wrong-model | unrelated |
+
+${PROMPT_CACHING}
+`;
+        expect(converseCacheModelIds(markdown)).toEqual(['anthropic.claude-sonnet-5-5', 'anthropic.claude-haiku-4-5-20251001-v1:0']);
+    });
 });
 
 describe('ModelCardStore', () => {

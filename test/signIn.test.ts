@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { redactSignInOutput } from '../src/signIn';
+import { describe, expect, it, vi } from 'vitest';
+import type * as vscode from 'vscode';
+import { redactSignInOutput, SsoSignIn } from '../src/signIn';
+
+describe('SsoSignIn.run', () => {
+    it('拒絕以 - 開頭的 profile 名稱，不啟動 aws', async () => {
+        const log = { error: vi.fn(), info: vi.fn() } as unknown as vscode.LogOutputChannel;
+        await expect(new SsoSignIn(log).run('--endpoint-url=https://example.invalid')).resolves.toBe(false);
+        expect(log.error).toHaveBeenCalledOnce();
+        expect(log.info).not.toHaveBeenCalled();
+    });
+});
 
 // Line formats observed in this extension's log from AWS CLI v2 `aws sso login` (2026-10-01); IDs replaced with dummies.
 describe('redactSignInOutput', () => {

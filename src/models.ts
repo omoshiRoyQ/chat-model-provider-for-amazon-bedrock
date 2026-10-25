@@ -39,7 +39,7 @@ const K = 1_000;
 const M = 1_000_000;
 
 export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
-    // ?? Anthropic ?? Context, max output, and thinking formats come from each model card (accessed 2026-10-09).
+    // Anthropic: context, max output, and thinking formats come from each model card (accessed 2026-10-09).
     // promptCache follows the explicit prompt caching table in prompt-caching.html (Converse `messages` checkpoints; check-model-cards compares it).
     'anthropic.claude-3-haiku-20240307-v1:0': { card: 'model-card-anthropic-claude-3-haiku', contextWindow: 200 * K, maxOutputTokens: 4 * K, thinking: 'none' },
     'anthropic.claude-haiku-4-5-20251001-v1:0': { card: 'model-card-anthropic-claude-haiku-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
@@ -65,7 +65,7 @@ export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     'anthropic.claude-fable-5-1': { card: 'model-card-anthropic-claude-fable-5-1', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
     // No model card was found for Claude 3 Sonnet, so it is omitted from the catalog and uses conservative values with a log entry.
 
-    // ?? OpenAI ?? Limits come from each model card (rechecked 2026-10-04 with check-model-cards).
+    // OpenAI: limits come from each model card (rechecked 2026-10-04 with check-model-cards).
     // longContextThreshold comes from each card's Pricing section ("more than 272K input tokens", checked 2026-10-04).
     'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
     'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
@@ -232,6 +232,8 @@ export interface ResolvedModel {
     /** Foundation model ID without a prefix. */
     readonly baseId: string;
     readonly name: string;
+    /** True only when an active generation threshold cannot interpret this model's known series format. */
+    readonly versionUnknown?: boolean;
     /** Invocation scope, shown next to the model in the picker. */
     readonly route: 'Geo' | 'Global' | 'In-Region';
     readonly contextWindow: number;
@@ -299,6 +301,7 @@ export function resolveModels(
     onlyClaudeAndGpt: boolean,
     cardLimits: ReadonlyMap<string, CardLimits> = new Map(),
     probed: Readonly<Record<string, ProbedCapabilities>> = PROBED_CAPABILITIES,
+    isVisible?: (baseId: string) => boolean,
 ): ResolveResult {
     const notes: string[] = [];
     const unknownIds: string[] = [];
@@ -346,7 +349,8 @@ export function resolveModels(
 
     const models: ResolvedModel[] = [];
     for (const [baseId, pick] of picked) {
-        if (onlyClaudeAndGpt && !isClaudeOrGpt(baseId)) {
+        // A supplied visibility policy replaces the legacy boolean, never intersects with it.
+        if (isVisible ? !isVisible(baseId) : onlyClaudeAndGpt && !isClaudeOrGpt(baseId)) {
             continue;
         }
         const foundation = foundationById.get(baseId);

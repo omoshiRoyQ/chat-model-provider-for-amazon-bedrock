@@ -45,24 +45,16 @@ export const PROMPT_CACHING_URL = `${MODEL_CARD_BASE_URL}prompt-caching.md`;
  */
 export function converseCacheModelIds(markdown: string): string[] | undefined {
     const lines = markdown.split(/\r?\n/);
-    const start = lines.findIndex((l) => l.startsWith('|') && l.includes('Model ID') && l.includes('Fields that accept'));
-    if (start < 0) {
+    const caching = table(lines, (header) => header.includes('Model ID') && header.some((cell) => cell.startsWith('Fields that accept')));
+    if (!caching) {
         return undefined;
     }
-    const header = cells(lines[start]).map((c) => c.replace(/\*/g, '').trim());
+    const { header, rows } = caching;
     const idColumn = header.indexOf('Model ID');
     const fieldsColumn = header.findIndex((h) => h.startsWith('Fields that accept'));
-    const result: string[] = [];
-    for (const line of lines.slice(start + 2)) {
-        if (!line.startsWith('|')) {
-            break;
-        }
-        const row = cells(line);
-        if (row[fieldsColumn]?.includes('`messages`') && MODEL_ID.test(row[idColumn] ?? '')) {
-            result.push(row[idColumn]);
-        }
-    }
-    return result;
+    return rows.flatMap((row) => (
+        row[fieldsColumn]?.includes('`messages`') && MODEL_ID.test(row[idColumn] ?? '') ? [row[idColumn]] : []
+    ));
 }
 
 /** Parses values such as "1M tokens", "128K", or "1,050,000 tokens"; K and M are decimal, matching the catalog. */
@@ -85,9 +77,15 @@ function cells(line: string): string[] {
     return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
 }
 
-/** Rows of the first markdown table whose header contains the given column name. */
-function table(lines: readonly string[], column: string): { header: string[]; rows: string[][] } | undefined {
-    const start = lines.findIndex((l) => l.startsWith('|') && l.includes(`**${column}**`));
+/** Rows of the first markdown table whose normalized header satisfies the predicate. */
+function table(lines: readonly string[], matchesHeader: (header: readonly string[]) => boolean): { header: string[]; rows: string[][] } | undefined {
+    const start = lines.findIndex((line) => {
+        if (!line.startsWith('|')) {
+            return false;
+        }
+        const header = cells(line).map((cell) => cell.replace(/\*/g, '').trim());
+        return matchesHeader(header);
+    });
     if (start < 0) {
         return undefined;
     }
@@ -112,7 +110,7 @@ function ids(cell: string | undefined, stripPrefix: boolean): string[] {
 
 function converseSupport(lines: readonly string[]): boolean | undefined {
     // Most vendors: the modality table has an API column whose rows read "<icon> Converse".
-    const modalities = table(lines, 'Output Modalities');
+    const modalities = table(lines, (header) => header.includes('Output Modalities'));
     const apiColumn = modalities?.header.findIndex((h) => h.includes('APIs supported')) ?? -1;
     const listed = modalities?.rows.map((r) => r[apiColumn] ?? '').find((c) => /\)\s*Converse$/.test(c));
     if (listed) {
@@ -120,7 +118,7 @@ function converseSupport(lines: readonly string[]): boolean | undefined {
     }
     // Claude layout: a separate table of API columns under this heading.
     const heading = lines.findIndex((l) => l.includes('APIs supported on `bedrock-runtime` endpoint'));
-    const apis = heading >= 0 ? table(lines.slice(heading), 'Converse') : undefined;
+    const apis = heading >= 0 ? table(lines.slice(heading), (header) => header.includes('Converse')) : undefined;
     const cell = apis?.rows[0]?.[apis.header.indexOf('Converse')];
     return cell ? cell.includes('icon-yes.png') : undefined;
 }
@@ -129,11 +127,11 @@ export function parseModelCard(card: string, markdown: string): ModelCard {
     const lines = markdown.split(/\r?\n/);
     const { pricing, longContextThreshold } = parseCardPricing(markdown);
 
-    const modalities = table(lines, 'Output Modalities');
+    const modalities = table(lines, (header) => header.includes('Output Modalities'));
     const outputColumn = modalities?.header.indexOf('Output Modalities') ?? -1;
     const textOutput = modalities?.rows.some((r) => /icon-yes\.png\)\s*Text$/.test(r[outputColumn] ?? '')) ?? false;
 
-    const access = table(lines, 'Model ID');
+    const access = table(lines, (header) => header.includes('Model ID'));
     const runtimeIds = new Set<string>();
     if (access) {
         const col = (name: string) => access.header.indexOf(name);
@@ -174,7 +172,7 @@ function routeOf(label: string): CardRoute | undefined {
 
 /** Reads one price table; any unreadable cell fails the whole table so a partial price is never used. Cache columns are optional. */
 function priceRows(lines: readonly string[]): RouteRows | undefined {
-    const prices = table(lines, 'Inference option');
+    const prices = table(lines, (header) => header.includes('Inference option'));
     if (!prices) {
         return undefined;
     }

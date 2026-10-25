@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import operationErrorContext = require('./operationErrorContext.cjs');
 
 /** Include the call path in errors so the failing route can be identified. */
 export type CallPath = 'Native';
@@ -39,18 +40,7 @@ export function isSystemMessageUnsupported(error: unknown): boolean {
 }
 
 /** Preserve AWS error details while adding the operation and resolved region that failed. */
-export function withOperationContext(error: unknown, operation: string, region?: string): Error {
-    const source = (error ?? {}) as AwsLikeError;
-    const contextual = new Error(source.message ?? String(error), { cause: error });
-    contextual.name = operation === 'ResolveRegion' && /region is missing/i.test(source.message ?? '')
-        ? 'RegionNotConfigured'
-        : source.name ?? contextual.name;
-    const details = contextual as Error & Pick<AwsLikeError, '$metadata' | 'operation' | 'region'>;
-    details.operation = operation;
-    details.region = region;
-    details.$metadata = source.$metadata;
-    return contextual;
-}
+export const withOperationContext = operationErrorContext.withOperationContext;
 
 function errorDetails(e: AwsLikeError, modelId: string, path: CallPath): string {
     const code = e.name ?? 'UnknownError';

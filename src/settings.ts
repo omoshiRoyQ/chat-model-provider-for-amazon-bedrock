@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
+import { readModelVisibility, type VisibilityResult } from './modelFilter';
 import type { InferenceScope } from './models';
 import type { CustomPrices, ModelPrice } from './pricing';
-
-/** Values for `amazonBedrockProvider.modelFilter`. */
-export type ModelFilter = 'claudeAndGpt' | 'all';
 
 /** Extension settings. Read VS Code settings on each access so changes take effect immediately. */
 export interface BedrockSettings {
@@ -11,7 +9,7 @@ export interface BedrockSettings {
     readonly profile: string;
     /** AWS region; an empty string lets the SDK resolve it from the profile. */
     readonly region: string;
-    readonly modelFilter: ModelFilter;
+    readonly modelVisibility: VisibilityResult;
     readonly inferenceScope: InferenceScope;
     /** Day of the month (1–31) to reset token totals; use the last day when the month is shorter. */
     readonly usageResetDay: number;
@@ -30,7 +28,7 @@ export function readSettings(): BedrockSettings {
     return {
         profile: (config.get<string>('profile') ?? '').trim(),
         region: (config.get<string>('region') ?? '').trim(),
-        modelFilter: config.get<string>('modelFilter') === 'all' ? 'all' : 'claudeAndGpt',
+        modelVisibility: readModelVisibility(config),
         inferenceScope: scope === 'global' ? 'global' : 'geo',
         usageResetDay: clampInt(config.get<number>('usageResetDay'), 1, 31, 1),
         usageResetHour: clampInt(config.get<number>('usageResetHour'), 0, 23, 0),

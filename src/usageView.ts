@@ -1,5 +1,5 @@
 import { estimateModelCost, lookupPrice, type CustomPrices, type PriceSource, type PriceTable, type RoutePrices } from './pricing';
-import type { UsagePeriod } from './usage';
+import { totalInputTokens, type UsagePeriod } from './usage';
 
 export interface UsageRow {
     readonly invokeId: string;
@@ -67,8 +67,7 @@ export function buildUsageView(
             missingPrice: estimate && 'missing' in estimate ? estimate.missing : undefined,
         };
     });
-    const totalOf = (r: UsageRow) => r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens;
-    rows.sort((a, b) => totalOf(b) - totalOf(a));
+    rows.sort((a, b) => totalInputTokens(b) - totalInputTokens(a));
     return {
         profile,
         region,
@@ -76,7 +75,7 @@ export function buildUsageView(
         nextReset: nextReset.toISOString(),
         manualResetAt: period.manualResetAt,
         rows,
-        totalInput: rows.reduce((s, r) => s + totalOf(r), 0),
+        totalInput: rows.reduce((s, r) => s + totalInputTokens(r), 0),
         totalUncachedInput: rows.reduce((s, r) => s + r.inputTokens, 0),
         totalCacheRead: rows.reduce((s, r) => s + r.cacheReadTokens, 0),
         totalCacheWrite: rows.reduce((s, r) => s + r.cacheWriteTokens, 0),

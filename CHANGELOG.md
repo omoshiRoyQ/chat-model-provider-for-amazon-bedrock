@@ -2,6 +2,13 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
 
+## 2.0.0 (2026-10-25)
+
+- You can create separate Chat model presets with a fixed thinking effort and route while keeping the original model available.
+- Model Visibility lets you select providers and set minimum versions for Claude, regular GPT, and Grok. Unknown versions remain visible; setting a GPT minimum also hides GPT-OSS and Safeguard.
+- **Breaking change:** `amazonBedrockProvider.modelFilter` has been removed. If you previously set it to `all`, use `amazonBedrockProvider.modelVisibility` with `mode: "all"` and an empty `providers` array to continue showing all eligible providers; otherwise the default remains Anthropic and OpenAI with no minimum version.
+- Provider settings are ordered by profile, region, inference scope, model visibility, model presets, usage reset day, usage reset hour, and custom pricing.
+
 ## 1.4.1 (2026-10-11)
 
 - The Sign in button in the status bar no longer disappears while the AWS SSO token is still expired. It was hidden whenever VS Code re-read the cached model list; now it is hidden only after a request to AWS succeeds or you sign in.

@@ -21,7 +21,7 @@ async function fetchText(url: string): Promise<string> {
 
 const isClaudeOrGpt = (id: string) => id.startsWith('anthropic.') || id.startsWith('openai.');
 const limits = (c: { contextWindow?: number; maxOutputTokens?: number; longContextThreshold?: number }) =>
-    `context=${c.contextWindow ?? '未載明'}, maxOutput=${c.maxOutputTokens ?? '未載明'}, longContextThreshold=${c.longContextThreshold ?? '無'}`;
+    `context=${c.contextWindow ?? 'unspecified'}, maxOutput=${c.maxOutputTokens ?? 'unspecified'}, longContextThreshold=${c.longContextThreshold ?? 'none'}`;
 const entryLine = (id: string, e: { card: string; contextWindow?: number; maxOutputTokens?: number; thinking: string; nativeUnsupported?: true; promptCache?: true; longContextThreshold?: number }) =>
     `'${id}': { card: '${e.card}'${e.contextWindow !== undefined ? `, contextWindow: ${e.contextWindow}` : ''}${e.maxOutputTokens !== undefined ? `, maxOutputTokens: ${e.maxOutputTokens}` : ''}, thinking: '${e.thinking}'${e.nativeUnsupported ? ', nativeUnsupported: true' : ''}${e.promptCache ? ', promptCache: true' : ''}${e.longContextThreshold !== undefined ? `, longContextThreshold: ${e.longContextThreshold}` : ''} },`;
 
@@ -65,7 +65,7 @@ async function probeThinking(runtime: BedrockRuntimeClient, modelId: string): Pr
             }
             notes.push(`${label}=ValidationException`);
             if (!fields) {
-                throw new Error(`不帶 thinking 參數也被拒，無法判斷（${(error as Error).message}）`);
+                throw new Error(`Rejected even without thinking parameters, so the format cannot be determined (${(error as Error).message})`);
             }
             return false;
         }
@@ -87,11 +87,11 @@ let names: string[];
 try {
     names = modelCardNames(await fetchText(MODEL_CARD_INDEX_URL));
 } catch (error) {
-    console.error(`無法讀取 model card 目錄：${(error as Error).message}`);
+    console.error(`Cannot read the model card index: ${(error as Error).message}`);
     process.exit(1);
 }
 if (names.length === 0) {
-    console.error(`${MODEL_CARD_INDEX_URL} 裡找不到任何 model card，頁面格式可能已改變。`);
+    console.error(`No model cards found in ${MODEL_CARD_INDEX_URL}; the page format may have changed.`);
     process.exit(1);
 }
 
@@ -104,10 +104,10 @@ try {
     if (ids) {
         cacheIds = new Set(ids);
     } else {
-        unparsed.push(`${PROMPT_CACHING_URL}：找不到支援 explicit prompt caching 的模型表`);
+        unparsed.push(`${PROMPT_CACHING_URL}: model table for explicit prompt caching not found`);
     }
 } catch (error) {
-    failed.push(`${PROMPT_CACHING_URL}：${(error as Error).message}`);
+    failed.push(`${PROMPT_CACHING_URL}: ${(error as Error).message}`);
 }
 const promptCacheOf = (id: string) => (cacheIds?.has(id) ? (true as const) : undefined);
 let next = 0;
@@ -121,14 +121,14 @@ await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
             for (const [label, value] of [['Context window', card.contextWindow], ['Max output tokens', card.maxOutputTokens]] as const) {
                 const raw = new RegExp(`\\*\\*${label}:\\*\\*\\s*([^\\n]+)`).exec(markdown)?.[1];
                 if (raw !== undefined && value === undefined) {
-                    unparsed.push(`${name}：${label} 寫的是「${raw.trim()}」`);
+                    unparsed.push(`${name}: ${label} is "${raw.trim()}"`);
                 }
             }
             if (!card.pricing && /^## Pricing[\s\S]*\| \$\d/m.test(markdown)) {
-                unparsed.push(`${name}：Pricing 段落有價格表，但解析失敗`);
+                unparsed.push(`${name}: the Pricing section has a price table that failed to parse`);
             }
         } catch (error) {
-            failed.push(`${name}：${(error as Error).message}`);
+            failed.push(`${name}: ${(error as Error).message}`);
         }
     }
 }));
@@ -144,7 +144,7 @@ const nativeMismatch: string[] = [];
 const cacheMismatch: string[] = [];
 for (const [id, entry] of catalog) {
     if (cacheIds && !!entry.promptCache !== cacheIds.has(id)) {
-        cacheMismatch.push(`${id}：CATALOG promptCache=${entry.promptCache ?? false}；prompt-caching 頁面${cacheIds.has(id) ? '列為' : '沒有列為'}支援 Converse cache point\n      改成：${entryLine(id, { ...entry, promptCache: promptCacheOf(id) })}`);
+        cacheMismatch.push(`${id}: CATALOG promptCache=${entry.promptCache ?? false}; the prompt-caching page ${cacheIds.has(id) ? 'lists' : 'does not list'} it as supporting Converse cache points\n      Change to: ${entryLine(id, { ...entry, promptCache: promptCacheOf(id) })}`);
     }
     const card = cardByName.get(entry.card);
     if (!card) {
@@ -152,16 +152,16 @@ for (const [id, entry] of catalog) {
     }
     const onRuntime = card.runtimeIds.includes(id);
     if (entry.nativeUnsupported && onRuntime) {
-        nativeMismatch.push(`${id}：CATALOG 標示 nativeUnsupported，但 ${card.card} 已列出 bedrock-runtime`);
+        nativeMismatch.push(`${id}: CATALOG marks nativeUnsupported, but ${card.card} lists bedrock-runtime`);
     } else if (!entry.nativeUnsupported && card.runtimeIds.length === 0) {
-        nativeMismatch.push(`${id}：${card.card} 沒有列出 bedrock-runtime`);
+        nativeMismatch.push(`${id}: ${card.card} does not list bedrock-runtime`);
     } else if (!entry.nativeUnsupported && !onRuntime) {
-        idMismatch.push(`${id}：${card.card} 的 bedrock-runtime ID 是 ${card.runtimeIds.join('、')}`);
+        idMismatch.push(`${id}: the bedrock-runtime IDs of ${card.card} are ${card.runtimeIds.join(', ')}`);
     }
     // A card without a threshold is not a mismatch: Haiku 5.5's 100K comes from Anthropic's pricing page (see pricing.instructions.md).
     const threshold = card.longContextThreshold ?? entry.longContextThreshold;
     if (card.contextWindow !== entry.contextWindow || card.maxOutputTokens !== entry.maxOutputTokens || threshold !== entry.longContextThreshold) {
-        limitMismatch.push(`${id}：CATALOG ${limits(entry)}；${card.card} ${limits(card)}\n      改成：${entryLine(id, { ...entry, contextWindow: card.contextWindow, maxOutputTokens: card.maxOutputTokens, longContextThreshold: threshold })}`);
+        limitMismatch.push(`${id}: CATALOG ${limits(entry)}; ${card.card} ${limits(card)}\n      Change to: ${entryLine(id, { ...entry, contextWindow: card.contextWindow, maxOutputTokens: card.maxOutputTokens, longContextThreshold: threshold })}`);
     }
 }
 const otherVendors = cards.filter((c) => c.textOutput && c.runtimeIds.length > 0 && !c.runtimeIds.some(isClaudeOrGpt));
@@ -177,7 +177,7 @@ if (probe && toAdd.length > 0) {
     try {
         invokeIdOf = await invokeIds(probe.profile, probe.region);
     } catch (error) {
-        console.error(`無法列出 inference profile：${(error as Error).name}: ${(error as Error).message}\nSSO 過期時請先執行 aws sso login --profile ${probe.profile}`);
+        console.error(`Cannot list inference profiles: ${(error as Error).name}: ${(error as Error).message}\nIf SSO has expired, run aws sso login --profile ${probe.profile}`);
         process.exit(1);
     }
 }
@@ -193,7 +193,7 @@ for (const card of toAdd) {
             additions.push(`// Verified ${date} with ConverseStream (${probe.region}, ${invokeId}): ${notes.join(', ')}\n      ${entryLine(id, { ...card, thinking: style, promptCache: promptCacheOf(id) })}`);
         } catch (error) {
             const e = error as { name?: string; message?: string };
-            additions.push(`${id}：無法實測（${invokeId}，${e.name}: ${e.message}），請問使用者
+            additions.push(`${id}: cannot probe (${invokeId}, ${e.name}: ${e.message}); ask the user
       ${entryLine(id, { ...card, thinking: 'TODO', promptCache: promptCacheOf(id) })}`);
         }
     }
@@ -201,19 +201,19 @@ for (const card of toAdd) {
 probe?.runtime.destroy();
 
 function section(title: string, lines: readonly string[]): void {
-    console.log(`\n## ${title}（${lines.length}）`);
-    console.log(lines.length > 0 ? lines.map((l) => `  - ${l}`).join('\n') : '  無');
+    console.log(`\n## ${title} (${lines.length})`);
+    console.log(lines.length > 0 ? lines.map((l) => `  - ${l}`).join('\n') : '  none');
 }
 
-console.log(`讀取 ${names.length} 個 model card，成功 ${cards.length} 個。`);
+console.log(`Read ${names.length} model cards, ${cards.length} succeeded.`);
 section(probe
-    ? '可以加入 CATALOG 的 Claude／GPT 模型（已實測 thinking）'
-    : '可以加入 CATALOG 的 Claude／GPT 模型（加上 --profile 與 --region 才會實測 thinking；TODO 會讓型別檢查失敗）', additions);
-section('可以從 CATALOG 刪除（model card 已不在目錄中）', removable.map(([id, e]) => `${id}（${e.card}）`));
-section('CATALOG 與 model card 的數字不同', limitMismatch);
-section('CATALOG 的 model ID 不在 model card 的 bedrock-runtime ID 裡', idMismatch);
-section('nativeUnsupported 與 model card 不一致', nativeMismatch);
-section('promptCache 與 prompt-caching 頁面不一致', cacheMismatch);
-section('頁面有寫數字但解析失敗（要更新 src/modelCards.ts）', unparsed);
-section('下載失敗', failed);
-console.log(`\n其他廠商有 ${otherVendors.length} 個文字模型有 bedrock-runtime ID；extension 執行時會自動讀取這些 model card，不需要加入 CATALOG。`);
+    ? 'Claude/GPT models to add to CATALOG (thinking probed)'
+    : 'Claude/GPT models to add to CATALOG (add --profile and --region to probe thinking; TODO fails type checking)', additions);
+section('Removable from CATALOG (model card no longer listed)', removable.map(([id, e]) => `${id} (${e.card})`));
+section('CATALOG and model card numbers differ', limitMismatch);
+section('CATALOG model ID is not among the model card bedrock-runtime IDs', idMismatch);
+section('nativeUnsupported disagrees with the model card', nativeMismatch);
+section('promptCache disagrees with the prompt-caching page', cacheMismatch);
+section('Numbers present but unparsed (update src/modelCards.ts)', unparsed);
+section('Download failed', failed);
+console.log(`\n${otherVendors.length} text models from other vendors have bedrock-runtime IDs; the extension reads these model cards at runtime, so they do not need to be added to CATALOG.`);

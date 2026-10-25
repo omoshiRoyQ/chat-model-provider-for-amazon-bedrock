@@ -26,6 +26,11 @@ export class SsoSignIn {
 
     /** Return the same Promise while a sign-in is in progress to avoid opening duplicate browser sessions. The result indicates success. */
     run(profile: string): Promise<boolean> {
+        // A leading '-' would be read by the AWS CLI as an option, not a profile name.
+        if (profile.startsWith('-')) {
+            this.log.error(`Refusing to run aws sso login: profile name "${profile}" starts with '-'`);
+            return Promise.resolve(false);
+        }
         if (!this.running) {
             this.running = this.execute(profile).finally(() => {
                 this.running = undefined;

@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import { addCachePoints, buildToolConfig, toConverseMessages, toConverseSystem } from './convert';
 import { describeError, describeErrorForLog, isCredentialError, isSystemMessageUnsupported } from './errors';
 import { fetchModelSources } from './modelList';
+import { modelVisibility, visibilityCacheKey } from './modelFilter';
 import type { ModelCardStore } from './modelCardStore';
+import { presetName, readModelPresets, type ModelPreset } from './modelPresets';
 import { resolveModels, type ResolvedModel } from './models';
 import { NativeConverseClient } from './native';
 import { CONFIG_SECTION, readSettings, type BedrockSettings } from './settings';
@@ -23,6 +25,48 @@ export interface ProviderHooks {
 /** Fallback label for model-list errors that cannot be attributed to a single AWS operation. */
 const LIST_OPERATION = 'model list';
 
+/** Chat model ID prefix for presets. Real Bedrock IDs never start with it, so a preset ID can never be sent to AWS by mistake. */
+const PRESET_ID_PREFIX = 'bedrock-preset:';
+
+/** A preset whose model and route are currently listed, resolved against its base model. */
+interface ResolvedPreset {
+    /** Chat model ID shown to VS Code (PRESET_ID_PREFIX + the stored preset ID). */
+    readonly id: string;
+    readonly name: string;
+    readonly preset: ModelPreset;
+    /** The underlying listed model; its invokeId, limits and capabilities are what the request uses. */
+    readonly base: ResolvedModel;
+}
+
+interface ModelList {
+    readonly models: ResolvedModel[];
+    readonly presets: ResolvedPreset[];
+}
+
+function presetSettings() {
+    return readModelPresets(vscode.workspace.getConfiguration(CONFIG_SECTION));
+}
+
+function listSettingsKey(settings: BedrockSettings): string {
+    const presets = presetSettings();
+    return JSON.stringify([settings.profile, settings.region, settings.inferenceScope, visibilityCacheKey(settings.modelVisibility.value), settings.modelVisibility.diagnostics, presets.value, presets.diagnostics]);
+}
+
+/**
+ * Presets are matched against the already filtered list, so they inherit its provider/version filtering. A preset shows only when its model is
+ * listed with exactly the stored route; a different route is never substituted, and models without configurable thinking are not offered.
+ */
+function expandPresets(presets: readonly ModelPreset[], models: readonly ResolvedModel[]): ResolvedPreset[] {
+    const resolved: ResolvedPreset[] = [];
+    for (const preset of presets) {
+        const base = models.find((model) => model.baseId === preset.modelId && model.route === preset.route);
+        if (base && base.thinking !== 'none') {
+            resolved.push({ id: `${PRESET_ID_PREFIX}${preset.id}`, name: presetName(base.name, preset.effort, preset.route), preset, base });
+        }
+    }
+    return resolved;
+}
+
 /**
  * Amazon Bedrock LanguageModelChatProvider.
  * Dynamically loads the model list through control-plane APIs and streams text and tool calls through Native Converse.
@@ -39,9 +83,19 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     * clear it when settings change. Failed queries are not cached, so the next query retries (for example, after `aws sso login`).
     * Cache only which models are available, not whether they can be invoked; permissions can change at any time, so invocation results are authoritative.
      */
-    private listCache: { key: string; promise: Promise<ResolvedModel[]> } | undefined;
+    private listCache: { key: string; promise: Promise<ModelList> } | undefined;
+    /** Display-only changes reuse the existing control-plane source query. Failed queries are never cached. */
+    private sourceCache: { key: string; promise: ReturnType<typeof fetchModelSources> } | undefined;
+    private listGeneration = 0;
+    private cardRefreshPending = false;
+    private queuedCardIds: readonly string[] | undefined;
+    private refreshingCardIds: readonly string[] = [];
+    private cardsRelevant = false;
+    private disposed = false;
     /** Models from the most recent successful query, indexed by the model ID seen by VS Code. */
     private modelsById = new Map<string, ResolvedModel>();
+    /** Presets from the most recent successful query, indexed by their Chat model ID. */
+    private presetsById = new Map<string, ResolvedPreset>();
     /** Region used by the most recent model-list query (from settings or resolved by the SDK from the profile). */
     private resolvedRegion = '';
 
@@ -68,6 +122,10 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             if (e.affectsConfiguration(CONFIG_SECTION)) {
                 this.warnedMissingProfile = false;
                 this.listCache = undefined;
+                this.listGeneration++;
+                this.cardsRelevant = false;
+                const settings = readSettings();
+                if (this.sourceCache?.key !== JSON.stringify([settings.profile, settings.region])) this.sourceCache = undefined;
                 this.changeEmitter.fire();
             }
         });
@@ -84,6 +142,8 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     }
 
     dispose(): void {
+        this.disposed = true;
+        this.listGeneration++;
         this.configListener.dispose();
         this.changeEmitter.dispose();
     }
@@ -94,6 +154,10 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     ): Promise<vscode.LanguageModelChatInformation[]> {
         const settings = readSettings();
         if (!settings.profile) {
+            this.modelsById.clear();
+            this.presetsById.clear();
+            this.resolvedRegion = '';
+            this.cardsRelevant = false;
             // VS Code queries the model list frequently; log this state only once to avoid flooding the output.
             if (!this.warnedMissingProfile) {
                 this.log.warn(`No AWS profile is configured at ${CONFIG_SECTION}.profile; no models will be returned`);
@@ -101,11 +165,16 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             }
             return [];
         }
+        let queryGeneration = this.listGeneration;
         try {
-            const models = await this.listModels(settings);
+            const query = this.listModels(settings);
+            queryGeneration = this.listGeneration;
+            const list = await query;
+            if (queryGeneration !== this.listGeneration || this.disposed) return [];
             this.lastModelListErrorKey = undefined;
-            return models.map(toChatInformation);
+            return [...list.models.map((model) => toChatInformation(model)), ...list.presets.map(presetChatInformation)];
         } catch (error) {
+            if (this.disposed || queryGeneration !== this.listGeneration || listSettingsKey(readSettings()) !== listSettingsKey(settings)) return [];
             const message = describeError(error, LIST_OPERATION, 'Native', settings.profile);
             const logMessage = describeErrorForLog(error, LIST_OPERATION, 'Native', settings.profile);
             if (isCredentialError(error)) {
@@ -152,6 +221,8 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         if (ok) {
             this.clearCredentialProblem();
             this.listCache = undefined;
+            this.sourceCache = undefined;
+            this.listGeneration++;
             this.changeEmitter.fire();
             void vscode.window.showInformationMessage(
                 vscode.l10n.t('Signed in to AWS with profile "{0}". If a chat request failed, send it again.', profile),
@@ -195,16 +266,18 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     }
 
     /** Reuses one query for each settings combination; VS Code often issues several queries concurrently. */
-    private listModels(settings: BedrockSettings): Promise<ResolvedModel[]> {
-        const key = [settings.profile, settings.region, settings.inferenceScope, settings.modelFilter].join('|');
+    private listModels(settings: BedrockSettings): Promise<ModelList> {
+        const key = listSettingsKey(settings);
         if (this.listCache?.key === key) {
             return this.listCache.promise;
         }
+        const generation = ++this.listGeneration;
+        const current = () => !this.disposed && generation === this.listGeneration && listSettingsKey(readSettings()) === key;
         const promise = (async () => {
-            this.log.info(`Loading model list: profile=${settings.profile}, scope=${settings.inferenceScope}, modelFilter=${settings.modelFilter}`);
-            const sources = await fetchModelSources(settings.profile, settings.region);
-            // Only a real AWS call proves the credentials work; a cached list must not hide the sign-in button after the token expires.
-            this.clearCredentialProblem();
+            this.log.info(`Loading model list: profile=${settings.profile}, scope=${settings.inferenceScope}, modelVisibility=${visibilityCacheKey(settings.modelVisibility.value)}`);
+            for (const diagnostic of settings.modelVisibility.diagnostics) this.log.warn(diagnostic);
+            const sources = await this.modelSources(settings);
+            if (!current()) return { models: [], presets: [] };
             this.resolvedRegion = sources.region;
             this.log.info(`Resolved region=${sources.region} (${settings.region ? 'from settings' : 'from profile'})`);
             if (sources.foundationsDenied) {
@@ -214,18 +287,30 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
                 sources.profiles,
                 sources.foundations,
                 settings.inferenceScope,
-                settings.modelFilter === 'claudeAndGpt',
+                false,
                 this.modelCards.limits(),
+                undefined,
+                (baseId) => modelVisibility(baseId, settings.modelVisibility.value).visible,
             );
             for (const note of notes) {
                 this.log.info(note);
             }
             this.log.info(`Reported ${models.length} models (inference profiles=${sources.profiles.length}, foundation models=${sources.foundations.length}, imageInput=${models.filter((m) => m.imageInput).length})`);
-            this.modelsById = new Map(models.map((m) => [m.invokeId, m]));
+            const visibleModels = models.map((model) => modelVisibility(model.baseId, settings.modelVisibility.value).versionUnknown
+                ? { ...model, versionUnknown: true } : model);
+            this.modelsById = new Map(visibleModels.map((m) => [m.invokeId, m]));
+            const presetConfig = presetSettings();
+            for (const diagnostic of presetConfig.diagnostics) this.log.warn(diagnostic);
+            const presets = expandPresets(presetConfig.value, visibleModels);
+            this.presetsById = new Map(presets.map((p) => [p.id, p]));
+            if (presets.length < presetConfig.value.length) {
+                this.log.info(`Hidden ${presetConfig.value.length - presets.length} of ${presetConfig.value.length} model presets: base model or route is not in the current list`);
+            }
+            this.cardsRelevant = unknownIds.length > 0 || usesModelCards;
             if ((unknownIds.length > 0 || usesModelCards) && this.modelCards.needsRefresh(unknownIds)) {
                 this.refreshModelCards(unknownIds);
             }
-            return models;
+            return { models: visibleModels, presets };
         })();
         this.listCache = { key, promise };
         promise.catch(() => {
@@ -237,18 +322,57 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         return promise;
     }
 
+    private modelSources(settings: BedrockSettings): ReturnType<typeof fetchModelSources> {
+        const key = JSON.stringify([settings.profile, settings.region]);
+        if (this.sourceCache?.key === key) return this.sourceCache.promise;
+        const promise = fetchModelSources(settings.profile, settings.region).then((sources) => {
+            const latest = readSettings();
+            // Only a real query proves credentials work; display-only recomposition must not hide the sign-in button.
+            if (!this.disposed && this.sourceCache?.promise === promise && JSON.stringify([latest.profile, latest.region]) === key) this.clearCredentialProblem();
+            return sources;
+        });
+        this.sourceCache = { key, promise };
+        promise.catch(() => {
+            if (this.sourceCache?.promise === promise) this.sourceCache = undefined;
+        });
+        return promise;
+    }
+
     /** Runs in the background so the model list is not delayed; reloads the list when new card data arrives. */
     private refreshModelCards(unknownIds: readonly string[]): void {
+        if (this.cardRefreshPending) {
+            if (unknownIds.some((id) => !this.refreshingCardIds.includes(id))) this.queuedCardIds = unknownIds;
+            return;
+        }
+        this.cardRefreshPending = true;
+        this.refreshingCardIds = unknownIds;
+        const previous = this.modelCards.limits();
+        const cardKey = (limits: ReturnType<ModelCardStore['limits']>, id: string) => {
+            const card = limits.get(id);
+            return JSON.stringify(card ? [card.contextWindow, card.maxOutputTokens, card.converse, card.longContextThreshold] : null);
+        };
         this.log.info(`Fetching AWS model cards (models without catalog or card data: ${unknownIds.join(', ') || 'none'})`);
         this.modelCards.refresh(unknownIds).then(
             ({ fetched, failed }) => {
+                this.cardRefreshPending = false;
+                if (this.disposed) return;
                 this.log.info(`Model cards updated: fetched=${fetched}${failed.length > 0 ? `, failed=${failed.join(', ')}` : ''}`);
-                if (fetched > 0) {
+                const latest = this.modelCards.limits();
+                if (this.cardsRelevant && this.models.some((model) => cardKey(previous, model.baseId) !== cardKey(latest, model.baseId))) {
                     this.listCache = undefined;
+                    this.listGeneration++;
                     this.changeEmitter.fire();
                 }
+                const queued = this.queuedCardIds;
+                this.queuedCardIds = undefined;
+                // Recheck only new, still-visible requests; do not loop on the same failed/search-only result.
+                const visibleQueued = queued?.filter((id) => this.models.some((model) => model.baseId === id));
+                if (this.cardsRelevant && visibleQueued && visibleQueued.length > 0 && this.modelCards.needsRefresh(visibleQueued)) this.refreshModelCards(visibleQueued);
             },
             (error: unknown) => {
+                this.cardRefreshPending = false;
+                this.queuedCardIds = undefined;
+                if (this.disposed) return;
                 this.log.warn(`Could not fetch AWS model cards: ${error instanceof Error ? error.message : String(error)}; conservative limits remain in use`);
             },
         );
@@ -262,13 +386,24 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         token: vscode.CancellationToken,
     ): Promise<void> {
         const settings = readSettings();
-        const resolved = this.modelsById.get(model.id);
+        // Snapshot taken once: a preset removed or changed while this request runs does not alter it.
+        const preset = this.presetsById.get(model.id);
+        if (!preset && model.id.startsWith(PRESET_ID_PREFIX)) {
+            const message = vscode.l10n.t('Model preset "{0}" is no longer available. Pick another model, or restore the preset in the model presets setting.', model.id.slice(PRESET_ID_PREFIX.length));
+            this.log.error(`model=${model.id} rejected: preset is not in the current model list (path=Native)`);
+            throw new Error(message);
+        }
+        // From here on, presets use the underlying model for everything sent to AWS and recorded as usage.
+        const callId = preset?.base.invokeId ?? model.id;
+        const callName = preset?.base.name ?? model.name;
+        const resolved = preset?.base ?? this.modelsById.get(model.id);
         const imageInput = resolved?.imageInput ?? model.capabilities.imageInput ?? false;
-        const systemAsUser = this.noSystemModels.has(model.id);
+        const systemAsUser = this.noSystemModels.has(callId);
         const system = systemAsUser ? undefined : toConverseSystem(messages);
         const converseMessages = toConverseMessages(messages, this.log, imageInput, systemAsUser);
         const toolConfig = buildToolConfig(options.tools, options.toolMode, converseMessages);
-        const effort = this.hooks.thinkingEffort(model.id);
+        // A preset's effort is fixed and never read from the per-model store.
+        const effort = preset ? preset.preset.effort : this.hooks.thinkingEffort(model.id);
         const thinking = buildThinkingRequest(
             resolved?.thinking ?? 'none',
             effort,
@@ -279,20 +414,20 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             this.log.warn(`model=${model.id} is not in the latest model list; thinking parameters omitted`);
         }
         if (thinking.note) {
-            this.log.info(`model=${model.id} thinking: ${thinking.note}`);
+            this.log.info(`model=${callId} thinking: ${thinking.note}`);
         }
         const images = converseMessages.reduce((n, m) => n + (m.content?.filter((b) => b.image).length ?? 0), 0);
         // Raw VS Code roles (1=user, 2=assistant; other values are not in the stable API) before merging.
         const roles = [...messages.reduce((m, x) => m.set(x.role, (m.get(x.role) ?? 0) + 1), new Map<number, number>())].map(([r, n]) => `${r}:${n}`).join(',');
         const promptCache = resolved?.promptCache ?? false;
         this.log.info(
-            `Sending request: model=${model.id}, path=Native, messages=${converseMessages.length}, roles=${roles}, system=${system ? 'field' : systemAsUser ? 'as-user' : 'none'}, images=${images}, tools=${options.tools?.length ?? 0}, toolConfig=${toolConfig ? toolConfig.tools?.length : 'none'}, thinkingEffort=${effort}, fields=${thinking.fields ? JSON.stringify(thinking.fields) : 'none'}, promptCache=${promptCache}`,
+            `Sending request: model=${callId}${preset ? `, preset=${preset.preset.id}` : ''}, path=Native, messages=${converseMessages.length}, roles=${roles}, system=${system ? 'field' : systemAsUser ? 'as-user' : 'none'}, images=${images}, tools=${options.tools?.length ?? 0}, toolConfig=${toolConfig ? toolConfig.tools?.length : 'none'}, thinkingEffort=${effort}, fields=${thinking.fields ? JSON.stringify(thinking.fields) : 'none'}, promptCache=${promptCache}`,
         );
         const withCache = <T extends Parameters<typeof addCachePoints>[0]>(r: T): T => (promptCache ? addCachePoints(r) : r);
         const baseRequest = {
             profile: settings.profile,
             region: settings.region,
-            modelId: model.id,
+            modelId: callId,
             messages: converseMessages,
             system,
             toolConfig,
@@ -301,7 +436,7 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             maxTokens: thinking.maxTokens ?? (resolved?.maxOutputSourced ? resolved.maxOutputTokens : undefined),
         };
         const request = withCache(baseRequest);
-        const tagFilter = model.id.includes('amazon.nova-') ? new ThinkingTagFilter() : undefined;
+        const tagFilter = callId.includes('amazon.nova-') ? new ThinkingTagFilter() : undefined;
         const reportText = (text: string) => {
             if (text) {
                 progress.report(new vscode.LanguageModelTextPart(text));
@@ -312,7 +447,7 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
                 reportText(tagFilter ? tagFilter.push(part.text) : part.text);
             } else {
                 reportText(tagFilter?.flush() ?? '');
-                this.log.info(`model=${model.id} called tool: ${part.name} (callId=${part.callId})`);
+                this.log.info(`model=${callId} called tool: ${part.name} (callId=${part.callId})`);
                 progress.report(new vscode.LanguageModelToolCallPart(part.callId, part.name, part.input));
             }
         };
@@ -325,28 +460,28 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
                     throw error;
                 }
                 // Bedrock validates before generating, so nothing was streamed or billed; resend with the system prompt as user text.
-                this.noSystemModels.add(model.id);
-                this.log.warn(`model=${model.id} does not support system messages; resending with the system prompt as user text`);
+                this.noSystemModels.add(callId);
+                this.log.warn(`model=${callId} does not support system messages; resending with the system prompt as user text`);
                 const merged = toConverseMessages(messages, this.log, imageInput, true);
                 usage = await this.native.stream(withCache({ ...baseRequest, messages: merged, system: undefined }), onPart, token);
             }
             if (tagFilter) {
                 reportText(tagFilter.flush());
                 if (tagFilter.removed > 0) {
-                    this.log.info(`model=${model.id} removed ${tagFilter.removed} characters of <thinking> text`);
+                    this.log.info(`model=${callId} removed ${tagFilter.removed} characters of <thinking> text`);
                 }
             }
             this.clearCredentialProblem();
             if (usage) {
-                this.hooks.onUsage(settings.profile, resolved, model.id, model.name, usage);
+                this.hooks.onUsage(settings.profile, resolved, callId, callName, usage);
             }
         } catch (error) {
             if (token.isCancellationRequested) {
-                this.log.info(`model=${model.id} request cancelled by user`);
+                this.log.info(`model=${callId} request cancelled by user`);
                 return;
             }
-            const message = describeError(error, model.id, 'Native', settings.profile);
-            this.log.error(describeErrorForLog(error, model.id, 'Native', settings.profile));
+            const message = describeError(error, callId, 'Native', settings.profile);
+            this.log.error(describeErrorForLog(error, callId, 'Native', settings.profile));
             if (isCredentialError(error)) {
                 // The user is actively using Chat, so show a notification with a sign-in button; do not retry the request automatically.
                 this.reportCredentialProblem(settings.profile, message, true);
@@ -366,21 +501,27 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     }
 }
 
-function toChatInformation(model: ResolvedModel): vscode.LanguageModelChatInformation {
+function toChatInformation(model: ResolvedModel, id = model.invokeId, name = model.name, extraDetail?: string): vscode.LanguageModelChatInformation {
+    const unknown = model.versionUnknown ? vscode.l10n.t('Version unknown; retained despite the minimum version setting') : undefined;
     return {
-        id: model.invokeId,
-        name: model.name,
+        id,
+        name,
         family: model.baseId,
         version: model.baseId,
         // VS Code's maxInputTokens is the input limit; subtract the output allowance from the context window.
         maxInputTokens: model.contextWindow - model.maxOutputTokens,
         maxOutputTokens: model.maxOutputTokens,
-        detail: `Native · ${model.route}`,
-        tooltip: model.invokeId,
+        detail: `Native · ${model.route}${extraDetail ? ` · ${extraDetail}` : ''}${unknown ? ` · ${unknown}` : ''}`,
+        tooltip: `${model.invokeId}${unknown ? `\n${unknown}` : ''}`,
         // Current VS Code Agent, Ask, and Plan modes list only models with toolCalling=true
         // (see isModelSupportedForMode in microsoft/vscode chatInputModelUtils.ts), so report true for all models.
         // Converse tool calling was verified with Claude Haiku 4.5 and GPT-6 Astra (2026-09-25);
         // if another model does not support it, Bedrock returns ValidationException with the model ID and error code.
         capabilities: { toolCalling: true, imageInput: model.imageInput },
     };
+}
+
+/** A preset reports its underlying model's limits and capabilities; only the ID and generated name differ, and the effort is shown in the name. */
+function presetChatInformation(entry: ResolvedPreset): vscode.LanguageModelChatInformation {
+    return toChatInformation(entry.base, entry.id, entry.name);
 }
