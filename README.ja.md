@@ -2,7 +2,7 @@
 
 [EN](README.md) | [TW](README.zh-tw.md)
 
-指定した AWS 名前付きプロファイル（SSO 対応）を使用して、VS Code Chat で Amazon Bedrock のモデルを利用できます。API key は使用も保存もせず、extension は telemetry を送信しません。Chat リクエストは Amazon Bedrock に送信され、使用量、モデルごとの thinking 設定、ダウンロードした価格表は VS Code のローカル extension storage に保存されます。
+指定した AWS 名前付きプロファイル（SSO 対応）を使用して、VS Code Chat で Amazon Bedrock のモデルを利用できます。API key は使用も保存もせず、使用状況や診断ログを作者に送信しません。Chat リクエストは Amazon Bedrock に送信され、使用量、モデルごとの thinking 設定、ダウンロードした価格表は VS Code のローカル extension storage に保存されます。
 
 この extension は `bedrock-runtime` endpoint の Native ConverseStream API のみを使用します。`bedrock-mantle` endpoint、および `bedrock-runtime` で利用できる OpenAI 互換 Chat Completions／Responses API と Anthropic Messages API は使用しません。
 
@@ -23,7 +23,7 @@
 - AWS CLI v2 と設定済みの AWS プロファイル。この extension は AWS プロファイルのみを使用し、API key や直接入力した access key は受け付けません。
 - AWS アカウントで Amazon Bedrock が有効であり、選択したモデルを設定済みのリージョンと推論範囲で利用できること。
 
-## セットアップ
+## 使い始めるには
 
 1. AWS CLI v2 で SSO プロファイルを設定します。
    ```powershell
@@ -31,7 +31,7 @@
    ```
 2. プロファイルにサインインします。
    ```powershell
-   aws sso login --profile bedrock
+   aws sso login --profile <profile>
    ```
 3. VS Code 設定の `amazonBedrockProvider.profile` に `bedrock` などのプロファイル名を入力します。プロファイルにリージョンが設定されていない場合は、`amazonBedrockProvider.region` も設定します。
 4. Chat のモデル選択を開き、Amazon Bedrock のモデルを選択して会話を開始します。
@@ -64,6 +64,31 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 1 つ目のコマンドが失敗する場合、モデル一覧を読み込めません。2 つ目のコマンドだけが失敗する場合は、上記の違いはありますが会話はできます。これらのコマンドでは `bedrock:InvokeModelWithResponseStream` を確認できません。この権限を確認するには、Chat でメッセージを送信してください。
 
 ## 設定
+
+### コマンドパレットで操作する（推奨）
+
+`Ctrl+Shift+P`（macOS：`Cmd+Shift+P`）でコマンドパレットを開き、`Bedrock` と入力して以下のコマンドを探します。通常の操作では JSON の編集やモデル ID の確認は不要です。下の JSON 例は詳細設定用です。
+
+**Model Visibility：表示するモデルを選ぶ**
+
+1. **Chat Model Provider for Amazon Bedrock: モデル表示フィルターを設定** を実行します。
+2. **すべてのプロバイダー** を選ぶか、**プロバイダーを選択** を選び、表示したいプロバイダーにチェックを入れて Enter を押します。何も選択しない場合、モデルは表示されません。
+3. 案内に従って Claude、GPT、Grok の最低バージョン（例：`4.6`、`6`）を設定します。空欄で Enter を押すと下限なしになります。選択したプロバイダーに対応するシリーズだけを尋ねます。すべてのプロバイダーを選ぶと、3 つのシリーズを尋ねます。
+4. 設定内容を確認して **保存** を選び、Chat のモデル選択を開いて結果を確認します。途中で Esc を押してキャンセルした場合、変更は保存されません。
+
+**Model Presets：thinking effort を固定したプリセットを作る**
+
+プリセットは主に、Agent や sub-agent を自動で呼び出すワークフロー向けです。モデルは選択できても thinking effort を別途指定できない場合、同じベースモデルに異なる思考レベルのプリセットを作成することで、ユーザーやタスクを割り当てる Agent が難易度に応じて選択できます。例えば、通常のタスクには `medium`、複雑な推論には `max` のプリセットを使い、実行のたびに元のモデルの thinking 設定を手動で変更する必要がなくなります。どのプリセットを使うかはユーザーまたは呼び出し元が決定します。extension が難易度を自動判定したりプリセットを切り替えたりすることはなく、effort はモデルが対応する範囲に従います。
+
+1. Chat のモデル選択を一度開いて、現在利用可能なモデル一覧を読み込みます。
+2. `Ctrl+Shift+P`（macOS：`Cmd+Shift+P`）で **Chat Model Provider for Amazon Bedrock: モデルプリセットを管理** を実行し、**プリセットを追加** を選びます。
+3. 表示名からベースモデルを選び、その項目のルート（`Geo`、`Global`、`In-Region`）を確認します。thinking を設定できるモデルだけが表示され、モデル ID の入力は不要です。
+4. thinking effort を選び、自動生成されたプリセット名を確認して **保存** を選びます。モデル ID、UUID、固定ルートは設定に自動で書き込まれます。Chat のモデル選択を開き直すと新しいプリセットを選択でき、元のモデルも引き続き利用できます。
+5. 後から編集するには **モデルプリセットを管理** を再実行して既存のプリセットを選びます。**thinking effort を変更** で新しい effort を選んで保存するか、**プリセットを削除** で削除を確認します。キャンセルした場合、変更は保存されません。
+
+プリセットのメニューが編集するのは User 設定のみです。ワークスペースで上書きされている場合は、直接変更せずワークスペース設定の JSON を開くよう案内します。追加時にモデルがない場合は、一覧が読み込まれていること、表示フィルターで対象モデルが許可されていること、thinking の設定に対応していることを確認してください。
+
+### 設定と JSON の例
 
 - **Model Visibility**：**モデル表示フィルターを設定** コマンドを使うか、設定 JSON で `amazonBedrockProvider.modelVisibility` を編集します。既定では Anthropic と OpenAI を選択し、バージョンの下限はありません。プロバイダーのグループには、Anthropic（Claude）、OpenAI（GPT、GPT-OSS、GPT-OSS Safeguard）、xAI（Grok）、NVIDIA（Nemotron）などのモデルシリーズが表示されます。`all` モードでは将来追加されるプロバイダーも含み、`selected` モードで `providers` が空配列の場合はプロバイダーを何も選択しません。メニューで最低バージョンを尋ねるのは、選択したプロバイダーの分だけです。保存時に、選択していないプロバイダーに設定済みの下限を削除します。モデルは引き続き Bedrock と Chat の既存の条件を満たす必要があります。
 
@@ -108,7 +133,7 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 
   未設定または空配列はプリセットなしを意味します。ワークスペース設定は User 配列全体を置き換えます。管理コマンドが編集するのは User 設定のみです。ワークスペースで上書きされている場合は、ワークスペースの設定 JSON を開くよう案内します。重複した `id`、または `modelId`、route、effort がすべて同一の項目は拒否されます。プリセットは、保存した route と同じ route でベースモデルが現在利用可能で、モデル表示フィルターも通過する場合にのみ表示されます。推論範囲を変更しても、プリセットの route は切り替わりません。ベースモデルまたは route が一時的に利用できない場合、プリセットは非表示になりますが設定は保持され、再び利用可能になると表示されます。
 
-  プリセットは常に保存した effort を使用し、ベースモデルの thinking effort 設定や **Reset All** の影響を受けません。未対応の effort は既存のリクエスト処理に従って調整されるか Bedrock に拒否されます。プリセットを作成しても、Bedrock がその effort を受け付けるとは限りません。
+  プリセットは常に保存した effort を使用し、ベースモデルの thinking effort 設定や **すべてリセット** の影響を受けません。未対応の effort は既存のリクエスト処理に従って調整されるか Bedrock に拒否されます。プリセットを作成しても、Bedrock がその effort を受け付けるとは限りません。
 
 - **Inference Scope**：`geo` は地理的推論プロファイルを使用し、グローバルプロファイルしかないモデルは表示されません。`global` はグローバルプロファイルを優先し、世界中の AWS リージョンにリクエストがルーティングされる場合があります。グローバルプロファイルがないモデルは地理的プロファイルを使用します。
 - **Usage Reset Day／Hour**：月次リセットの日（1～31）と UTC 時刻（0～23）を設定します。その月に指定日がない場合は月末にリセットします。スケジュールを変更しても使用量はすぐに消去されず、新しいスケジュールの次回リセット時に消去されます。
@@ -137,9 +162,9 @@ Bedrock が返す入力／出力 token 数を AWS プロファイル、モデル
 
 ## セキュリティとプライバシー
 
-### テレメトリーとネットワーク通信
+### データの取り扱いとネットワーク通信
 
-この extension は telemetry を実装・送信せず、分析データを作者に送信しません。Chat の内容は下記のとおり Amazon Bedrock に送信されます。extension が行うネットワークリクエストは次のとおりです。
+この extension は使用状況、診断ログ、分析データを作者に送信しません。使用量は VS Code にローカル保存され、診断ログはローカルで確認して問題の調査に利用できます。Chat の内容は下記のとおり Amazon Bedrock に送信されます。extension が行うネットワークリクエストは次のとおりです。
 
 1. AWS プロファイルを通じた、選択したリージョンの Amazon Bedrock への接続（モデル一覧の読み込みとストリーミング Chat）。
 2. **価格を更新** を選択したときの、AWS 公開価格ファイルへの HTTPS GET リクエスト。リクエストにアカウント情報や AWS 認証情報は含まれません。
@@ -147,7 +172,7 @@ Bedrock が返す入力／出力 token 数を AWS プロファイル、モデル
 
 サインインボタンを選択すると、extension はローカルで AWS CLI の `aws sso login` を起動し、AWS CLI がブラウザーを開いてサインインを完了させます（アカウントの選択やアクセスの承認など）。バックグラウンドで自動的にサインインすることはありません。
 
-VS Code 自体の telemetry は VS Code の `telemetry.telemetryLevel` 設定に従い、この extension では制御しません。
+VS Code 自体が送信する使用状況や診断データは、VS Code の `telemetry.telemetryLevel` 設定に従います。この extension では制御しません。
 
 ### AWS 認証情報
 

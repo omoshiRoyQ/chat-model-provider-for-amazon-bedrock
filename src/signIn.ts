@@ -3,10 +3,11 @@ import { homedir } from 'node:os';
 import * as vscode from 'vscode';
 import { redactAwsIdentity } from './errors';
 
-/** Hides OAuth query values (client_id, state, PKCE challenge), the organization's Start URL subdomain, and emails. */
+/** Hides OAuth query values (client_id, state, PKCE challenge), device-flow user codes, the organization's Start URL subdomain, and emails. */
 export function redactSignInOutput(line: string): string {
     return redactAwsIdentity(line)
         .replace(/(https?:\/\/[^\s?#]+)[?#]\S*/g, '$1?[redacted]')
+        .replace(/^\s*[A-Z0-9]{4}-[A-Z0-9]{4}\s*$/, '[code redacted]')
         .replace(/https:\/\/[^\s/.]+\.awsapps\.com/g, 'https://[redacted].awsapps.com');
 }
 

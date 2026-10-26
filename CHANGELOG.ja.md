@@ -2,11 +2,17 @@
 
 [EN](CHANGELOG.md) | [TW](CHANGELOG.zh-tw.md)
 
+## 2.0.1（2026-10-26）
+
+- 同梱の AWS SDK を 3.1156.0 に更新しました。
+- README に、「モデル表示フィルターを設定」と「モデルプリセットを管理」コマンドを使ってモデルを絞り込み、プリセットを作成、編集、削除する手順を追加しました。
+- AWS SSO のデバイス認証コードは、extension のログで `[code redacted]` に置き換えられます。
+
 ## 2.0.0（2026-10-25）
 
 - thinking effort とルートを固定した Chat モデルプリセットを作成でき、元のモデルも引き続き利用できます。
 - Model Visibility でプロバイダーを選択し、Claude、通常の GPT、Grok の最低バージョンを設定できます。バージョン不明のモデルは表示を維持し、GPT の下限を設定すると GPT-OSS と Safeguard も非表示になります。
-- **互換性のない変更：**`amazonBedrockProvider.modelFilter` を削除しました。以前 `all` を設定していた場合は、引き続き対象プロバイダーをすべて表示するため、`amazonBedrockProvider.modelVisibility` の `mode` を `"all"`、空の `providers` 配列を設定してください。それ以外の場合、既定では Anthropic と OpenAI をバージョン制限なしで表示します。
+- **互換性のない変更**：`amazonBedrockProvider.modelFilter` を削除しました。以前 `all` を設定していた場合は、引き続き対象プロバイダーをすべて表示するため、`amazonBedrockProvider.modelVisibility` の `mode` を `"all"`、空の `providers` 配列を設定してください。それ以外の場合、既定では Anthropic と OpenAI をバージョン制限なしで表示します。
 - 設定は profile、region、inference scope、model visibility、model presets、usage reset day、usage reset hour、custom pricing の順に表示されます。
 
 ## 1.4.1（2026-10-11）

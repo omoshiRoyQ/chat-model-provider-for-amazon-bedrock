@@ -2,11 +2,17 @@
 
 [EN](CHANGELOG.md) | [JP](CHANGELOG.ja.md)
 
+## 2.0.1（2026-10-26）
+
+- 內含的 AWS SDK 已更新至 3.1156.0。
+- README 現在已補齊操作步驟，說明如何使用「設定模型顯示篩選」命令設定要顯示的模型，以及使用「管理模型組合」命令新增、修改或移除模型組合。
+- AWS SSO 裝置授權碼現在會在 extension 紀錄中以 `[code redacted]` 取代。
+
 ## 2.0.0（2026-10-25）
 
 - 可建立固定 thinking effort 與路由的獨立 Chat 模型組合，原始模型仍可使用。
 - Model Visibility 可依供應商篩選，並為 Claude、一般 GPT、Grok 設定最低版本。版本未知的模型仍會保留；設定 GPT 門檻時，GPT-OSS 與 Safeguard 也會隱藏。
-- **不相容變更：**已移除 `amazonBedrockProvider.modelFilter`。若先前設為 `all`，請將 `amazonBedrockProvider.modelVisibility` 設為 `mode: "all"` 並使用空的 `providers` 陣列，繼續顯示所有符合條件的供應商；否則預設仍為 Anthropic 與 OpenAI，且不限版本。
+- **不相容的變更**：已移除 `amazonBedrockProvider.modelFilter`。若先前設為 `all`，請將 `amazonBedrockProvider.modelVisibility` 設為 `mode: "all"` 並使用空的 `providers` 陣列，繼續顯示所有符合條件的供應商；否則預設仍為 Anthropic 與 OpenAI，且不限版本。
 - 設定頁現在依序排列 profile、region、inference scope、model visibility、model presets、usage reset day、usage reset hour 與 custom pricing。
 
 ## 1.4.1（2026-10-11）

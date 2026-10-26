@@ -23,6 +23,12 @@ describe('redactSignInOutput', () => {
             .toBe('Successfully logged into Start URL: https://[redacted].awsapps.com/start');
     });
 
+    // Device-authorization output format from https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html (code is the docs' sample).
+    it('遮蔽裝置授權的一次性代碼，保留提示文字', () => {
+        expect(redactSignInOutput('QCFK-N451')).toBe('[code redacted]');
+        expect(redactSignInOutput('Then enter the code:')).toBe('Then enter the code:');
+    });
+
     it('一般說明文字維持原樣', () => {
         const line = "If you are unable to open the URL on this device, run this command again with the '--use-device-code' option.";
         expect(redactSignInOutput(line)).toBe(line);

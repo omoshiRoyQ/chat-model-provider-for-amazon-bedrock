@@ -2,7 +2,7 @@
 
 [TW](README.zh-tw.md) | [JP](README.ja.md)
 
-Use Amazon Bedrock models in VS Code Chat with your AWS named profile (SSO supported). No API keys are used or stored, and the extension sends no telemetry. Chat requests go to Amazon Bedrock; usage totals, per-model thinking settings, and downloaded pricing data are stored in VS Code's local extension storage.
+Use Amazon Bedrock models in VS Code Chat with your AWS named profile (SSO supported). No API keys are used or stored, and usage or diagnostic data is not sent to the author. Chat requests go to Amazon Bedrock; usage totals, per-model thinking settings, and downloaded pricing data are stored in VS Code's local extension storage.
 
 This extension uses only the Native ConverseStream API on the `bedrock-runtime` endpoint. It does not use the `bedrock-mantle` endpoint or the OpenAI-compatible Chat Completions/Responses or Anthropic Messages APIs available on `bedrock-runtime`.
 
@@ -23,7 +23,7 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
 - AWS CLI v2 and a configured AWS profile. This extension uses AWS profiles only; it does not accept API keys or directly entered access keys.
 - Amazon Bedrock enabled for your AWS account, with the selected model available in the configured region and inference scope.
 
-## Setup
+## Getting Started
 
 1. Configure an SSO profile with AWS CLI v2:
    ```powershell
@@ -31,7 +31,7 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
    ```
 2. Sign in to the profile:
    ```powershell
-   aws sso login --profile bedrock
+   aws sso login --profile <profile>
    ```
 3. Set `amazonBedrockProvider.profile` in VS Code settings to the profile name, such as `bedrock`. Set `amazonBedrockProvider.region` if the profile does not specify a region.
 4. Open the Chat model picker, select an Amazon Bedrock model, and start chatting.
@@ -64,6 +64,31 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 If the first command fails, the model list cannot be loaded. If only the second command fails, chat still works with the differences listed above. These commands do not check `bedrock:InvokeModelWithResponseStream`; to confirm it, send a message in Chat.
 
 ## Settings
+
+### Use the Command Palette (recommended)
+
+Press `Ctrl+Shift+P` (`Cmd+Shift+P` on macOS) to open the Command Palette and type `Bedrock` to find the commands below. For everyday use, you do not need to edit JSON or look up model IDs; the JSON examples below are for advanced configuration.
+
+**Model Visibility: choose which models to show**
+
+1. Run **Chat Model Provider for Amazon Bedrock: Configure Model Visibility**.
+2. Choose **All providers**, or choose **Selected providers**, check the providers you want, and press Enter. Selecting no providers shows no models.
+3. Follow the prompts to set minimum versions for Claude, GPT, or Grok, such as `4.6` or `6`; leave a field empty and press Enter for no minimum. Only families belonging to selected providers are prompted; All providers prompts for all three families.
+4. Review the summary and choose **Save**, then open the Chat model picker to see the result. Pressing Esc to cancel during the process does not save changes.
+
+**Model Presets: create models with a fixed thinking effort**
+
+Presets are primarily intended for workflows that automatically invoke agents or sub-agents. When a workflow can select a model but cannot specify thinking effort separately, you can create presets of the same base model with different effort levels, allowing you or the agent assigning tasks to choose according to task difficulty. For example, use a `medium` preset for routine tasks and a `max` preset for more complex reasoning, without manually changing the original model's thinking setting before every run. The user or caller chooses the preset; the extension does not automatically assess task difficulty or switch presets, and the effort must still be supported by the model.
+
+1. Open the Chat model picker once to load the currently available model list.
+2. Press `Ctrl+Shift+P` (`Cmd+Shift+P` on macOS), run **Chat Model Provider for Amazon Bedrock: Manage Model Presets**, and choose **Add preset**.
+3. Select the base model by its display name and check the route shown for that item (`Geo`, `Global`, or `In-Region`). Only models with configurable thinking are listed; you do not need to enter a model ID.
+4. Choose the thinking effort, review the generated preset name, and choose **Save**. The model ID, UUID, and fixed route are written to settings automatically. Reopen the Chat model picker to select the new preset; the original model remains available.
+5. To edit later, run **Manage Model Presets** again and select an existing preset. Choose **Change thinking effort** and save the new effort, or choose **Remove preset** and confirm removal. Cancelling does not save changes.
+
+The preset menu edits User settings only. If a workspace override is active, it offers to open workspace Settings (JSON) instead of editing it directly. If no models are available when adding, check that the model list is loaded, visibility filtering allows the model, and the model supports configurable thinking.
+
+### Settings and JSON examples
 
 - **Model Visibility**: Use **Configure Model Visibility** or edit `amazonBedrockProvider.modelVisibility` in Settings (JSON). The default selects Anthropic and OpenAI with no minimum version. Provider groups show their model families, such as Anthropic (Claude), OpenAI (GPT, GPT-OSS, GPT-OSS Safeguard), xAI (Grok), and NVIDIA (Nemotron). In `all` mode, future providers are included; in `selected` mode, an empty `providers` array selects no providers. The menu asks for a minimum version only for the providers you select; saving removes thresholds for unselected providers. Existing Bedrock and Chat eligibility rules still apply.
 
@@ -137,9 +162,9 @@ The status bar shows this period's input and output tokens. Select the token tot
 
 ## Security and Privacy
 
-### Telemetry and Network Access
+### Data Use and Network Access
 
-This extension does not implement or send telemetry, and it does not send analytics data to the author. Chat content is sent to Amazon Bedrock as described below. The extension makes these network requests:
+This extension does not send usage, diagnostic, or analytics data to the author. Usage totals are stored locally in VS Code, and diagnostic logs are available locally for troubleshooting. Chat content is sent to Amazon Bedrock as described below. The extension makes these network requests:
 
 1. Amazon Bedrock in the selected region, through your AWS profile (loading the model list and streaming chat).
 2. An HTTPS GET request to the public AWS price file when you select **Update Prices**. The request contains no account information or credentials.
@@ -147,7 +172,7 @@ This extension does not implement or send telemetry, and it does not send analyt
 
 When you select the sign-in button, the extension starts AWS CLI `aws sso login` locally, and AWS CLI opens your browser to complete sign-in (for example, to choose an account and approve access). The extension never starts sign-in automatically in the background.
 
-VS Code's own telemetry follows the VS Code `telemetry.telemetryLevel` setting and is not controlled by this extension.
+VS Code's own usage and diagnostic data sharing follows the VS Code `telemetry.telemetryLevel` setting and is not controlled by this extension.
 
 ### Credentials
 
@@ -169,7 +194,7 @@ VS Code's own telemetry follows the VS Code `telemetry.telemetryLevel` setting a
 
 ### Logs
 
-- `Show Logs` records only diagnostics such as profile name, region, model ID, message counts, tool names, and error codes, never chat content. AWS principal ARNs and email addresses in error messages are redacted.
+- **Show Logs** records only diagnostics such as profile name, region, model ID, message counts, tool names, and error codes, never chat content. AWS principal ARNs and email addresses in error messages are redacted.
 - Logs include AWS CLI sign-in output with URL parameters, the organization name in the Start URL, and email addresses replaced by `[redacted]`. Still review logs for personal information before sharing. If the browser does not open during sign-in, run `aws sso login --profile <profile>` in a terminal.
 
 ### Open Source

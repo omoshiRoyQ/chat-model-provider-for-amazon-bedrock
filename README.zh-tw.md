@@ -2,7 +2,7 @@
 
 [EN](README.md) | [JP](README.ja.md)
 
-使用你指定的 AWS named profile（支援 SSO），在 VS Code Chat 使用 Amazon Bedrock 模型。Extension 不使用或儲存 API key，也不傳送遙測。Chat 請求會傳送到 Amazon Bedrock；使用量統計、各模型的 thinking 設定與下載的價格表會儲存在 VS Code 的本機 extension storage。
+使用你指定的 AWS named profile（支援 SSO），在 VS Code Chat 使用 Amazon Bedrock 模型。Extension 不使用或儲存 API key，也不會將使用狀況或診斷紀錄傳送給作者。Chat 請求會傳送到 Amazon Bedrock；使用量統計、各模型的 thinking 設定與下載的價格表會儲存在 VS Code 的本機 extension storage。
 
 此 extension 只使用 `bedrock-runtime` endpoint 的 Native ConverseStream API；不使用 `bedrock-mantle` endpoint，也不使用 `bedrock-runtime` 上的 OpenAI 相容 Chat Completions／Responses 或 Anthropic Messages API。
 
@@ -17,7 +17,7 @@
 - 支援 prompt cache 的 Claude 模型會使用 Bedrock prompt caching，重複的對話內容可以從快取讀取。
 - 可更新價格表、設定自訂價格、設定每月使用量重設日期與 UTC 時間。
 
-## 系統需求
+## 必要條件
 
 - VS Code 1.106 或更新版本。
 - AWS CLI v2，以及已設定的 AWS profile。此 extension 只使用 AWS profile，不接受 API key 或直接輸入 access key。
@@ -31,7 +31,7 @@
    ```
 2. 登入該 profile：
    ```powershell
-   aws sso login --profile bedrock
+   aws sso login --profile <profile>
    ```
 3. 在 VS Code 設定 `amazonBedrockProvider.profile`，填入 profile 名稱，例如 `bedrock`。若 profile 沒有 region，請設定 `amazonBedrockProvider.region`。
 4. 開啟 Chat 模型選單，選取 Amazon Bedrock 模型並開始對話。
@@ -64,6 +64,31 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 第一個指令失敗時，extension 無法載入模型清單。只有第二個指令失敗時，仍可對話，差別如上所列。這些指令不會檢查 `bedrock:InvokeModelWithResponseStream`，要確認這項權限，請在 Chat 送出一則訊息。
 
 ## 設定選項
+
+### 透過命令選擇區操作（建議）
+
+按 `Ctrl+Shift+P`（macOS：`Cmd+Shift+P`）開啟命令選擇區，輸入 `Bedrock` 尋找以下命令。一般使用不必編輯 JSON，也不必事先查 model ID；下方 JSON 範例供進階設定使用。
+
+**Model Visibility：選擇要顯示的模型**
+
+1. 執行 **Chat Model Provider for Amazon Bedrock: 設定模型顯示篩選**。
+2. 選擇 **全部供應商**，或選擇 **選取供應商**，勾選想顯示的供應商並按 Enter。沒有勾選任何供應商時，不會顯示任何模型。
+3. 依提示設定 Claude、GPT 或 Grok 的最低版本，例如 `4.6` 或 `6`；留空並按 Enter 代表不限版本。只會詢問所選供應商對應的系列；選擇全部供應商時會詢問三個系列。
+4. 核對摘要並選擇 **儲存**，再開啟 Chat 模型選單查看結果。過程中按 Esc 取消不會儲存變更。
+
+**Model Presets：建立固定 thinking effort 的模型組合**
+
+模型組合主要用於自動觸發 Agent 或 sub-agent 的流程：當流程可以選擇模型，卻無法另外指定 thinking effort 時，可將同一個底層模型建立成不同思考等級的組合，讓使用者或負責分派任務的 Agent 依任務難度選擇。例如，一般任務使用 `medium` 組合，較複雜的推理任務使用 `max` 組合，不必在每次執行前手動更改原始模型的 thinking 設定。實際選擇哪個組合由使用者或呼叫端決定；extension 不會自動判斷任務難度或切換組合，且仍須符合模型支援的 effort。
+
+1. 先開啟一次 Chat 模型選單，讓目前可用的模型清單載入。
+2. 按 `Ctrl+Shift+P`（macOS：`Cmd+Shift+P`），執行 **Chat Model Provider for Amazon Bedrock: 管理模型組合**，選擇 **新增組合**。
+3. 從清單依顯示名稱選取底層模型，並確認該項目的路由（`Geo`、`Global` 或 `In-Region`）；只列出可設定 thinking 的模型，不必手動輸入 model ID。
+4. 選擇 thinking effort，核對自動產生的組合名稱，再選擇 **儲存**。model ID、UUID 與固定路由會自動寫入設定；重新開啟 Chat 模型選單即可選取新組合，原始模型仍保留。
+5. 日後再次執行 **管理模型組合** 並選取既有組合，可選擇 **變更 thinking effort**（選擇新 effort 後儲存），或 **移除組合**（確認移除）。取消操作不會儲存變更。
+
+模型組合選單只編輯使用者設定；若有工作區覆寫，會提示你開啟工作區設定 JSON，不會直接修改。若新增時沒有可供選擇的模型，請先確認模型清單已載入、顯示篩選允許該模型，且模型支援設定 thinking。
+
+### 設定與 JSON 範例
 
 - **Model Visibility**：使用「設定模型顯示篩選」命令，或在設定 JSON 中編輯 `amazonBedrockProvider.modelVisibility`。預設選取 Anthropic 與 OpenAI，且不限版本。供應商分組會列出模型系列，例如 Anthropic（Claude）、OpenAI（GPT、GPT-OSS、GPT-OSS Safeguard）、xAI（Grok）與 NVIDIA（Nemotron）。`all` 模式也包含未來新增的供應商；`selected` 模式的 `providers` 空陣列代表不選取任何供應商。選單只會讓你設定已選取供應商的最低版本；儲存時會移除未選取供應商先前儲存的門檻。模型仍須符合 Bedrock 與 Chat 既有條件。
 
@@ -108,7 +133,7 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 
   未設定此選項，或設為空陣列時，表示沒有組合。工作區設定會完整取代使用者設定陣列；管理命令只編輯使用者設定，若目前有工作區覆寫，會引導你開啟工作區設定 JSON。重複的 `id`，或 `modelId`、`route`、`effort` 全部相同的項目都會被拒絕。組合只有在底層模型目前可透過組合中儲存的路由呼叫，且符合模型顯示篩選時，才會列入清單。切換 inference scope 不會替組合改換路由。底層模型或路由暫時不可用時，組合會隱藏但設定保留；恢復可用後會再次顯示。
 
-  組合固定使用儲存的 effort，不受底層模型的 thinking effort 設定或 **Reset All** 影響。不支援的 effort 仍依既有請求處理方式調整或由 Bedrock 拒絕；建立組合不代表 Bedrock 一定接受該 effort。
+  組合固定使用儲存的 effort，不受底層模型的 thinking effort 設定或 **全部重設** 影響。不支援的 effort 仍依既有請求處理方式調整或由 Bedrock 拒絕；建立組合不代表 Bedrock 一定接受該 effort。
 
 - **Inference Scope**：`geo` 會使用地理區 inference profile，只提供 global profile 的模型不會列出。`global` 會優先使用 global profile，請求可能路由至世界各地的 AWS region；模型沒有 global profile 時，改用地理區 profile。
 - **Usage Reset Day／Hour**：指定每月重設日（1～31）與 UTC 小時（0～23）。當月沒有該日期時，會在當月最後一天重設。修改排程不會立刻清除使用量，會在新排程的下一個重設時間清除。
@@ -137,9 +162,9 @@ Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference 
 
 ## 安全與隱私
 
-### 遙測與網路連線
+### 資料使用與網路連線
 
-此 extension 不實作或傳送遙測，也不會將分析資料傳送給作者。Chat 內容會依下節說明傳送到 Amazon Bedrock。Extension 會發出以下網路請求：
+此 extension 不會將使用狀況、診斷紀錄或分析資料傳送給作者。使用量統計儲存在 VS Code 本機，診斷紀錄可在本機查看以協助排查問題。Chat 內容則依下節說明傳送到 Amazon Bedrock。Extension 會發出以下網路請求：
 
 1. 透過你的 AWS profile 連線至所選 region 的 Amazon Bedrock（載入模型清單、串流對話）。
 2. 你按下「更新價格」時，向 AWS 公開價格檔網址送出 HTTPS GET；請求不含帳號資訊或 AWS 憑證。
@@ -147,7 +172,7 @@ Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference 
 
 你按下登入按鈕時，extension 會在本機啟動 AWS CLI 的 `aws sso login`，AWS CLI 會打開瀏覽器讓你完成登入（例如選擇帳號、核准存取）；extension 不會在背景自動登入。
 
-VS Code 本身的遙測依 VS Code 的 `telemetry.telemetryLevel` 設定，不受此 extension 控制。
+VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `telemetry.telemetryLevel` 設定決定，不受此 extension 控制。
 
 ### AWS 憑證
 
@@ -169,7 +194,7 @@ VS Code 本身的遙測依 VS Code 的 `telemetry.telemetryLevel` 設定，不�
 
 ### 紀錄
 
-- 「顯示紀錄」只記錄 profile 名稱、region、model ID、訊息數量、tool 名稱與錯誤碼等診斷資訊，不記錄對話內容。錯誤訊息中的 AWS principal ARN 與 email 會先遮蔽。
+- **顯示紀錄** 只記錄 profile 名稱、region、model ID、訊息數量、tool 名稱與錯誤碼等診斷資訊，不記錄對話內容。錯誤訊息中的 AWS principal ARN 與 email 會先遮蔽。
 - 紀錄會包含 AWS CLI 登入輸出，其中網址參數、Start URL 中的組織名稱與電子郵件地址會換成 `[redacted]`。分享紀錄前仍請檢查是否有個人識別資料。登入時瀏覽器沒有開啟的話，請在終端機執行 `aws sso login --profile <profile>`。
 
 ### 開放原始碼
