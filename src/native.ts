@@ -8,6 +8,7 @@ import {
 import { fromIni } from '@aws-sdk/credential-providers';
 import * as vscode from 'vscode';
 import type { Document } from './convert';
+import { ProxyAwareHttpHandler, proxyHostHeaderPlugin } from './proxy';
 
 /** Token usage reported in Bedrock's final stream metadata event. */
 export interface TokenUsage {
@@ -38,7 +39,10 @@ export class NativeConverseClient {
     constructor(private readonly log: vscode.LogOutputChannel) { }
 
     private getClient(profile: string, region: string): BedrockRuntimeClient {
-        const key = `${profile}|${region}`;
+        const proxySettings = ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY']
+            .map(name => process.env[name] || '');
+        const proxyConfigured = proxySettings.some(Boolean);
+        const key = JSON.stringify([profile, region, ...proxySettings, process.env.no_proxy, process.env.NO_PROXY]);
         if (!this.client || this.clientKey !== key) {
             this.client?.destroy();
             this.client = new BedrockRuntimeClient({
@@ -46,9 +50,13 @@ export class NativeConverseClient {
                 profile,
                 region: region || undefined,
                 credentials: fromIni({ profile }),
+                requestHandler: proxyConfigured ? new ProxyAwareHttpHandler(this.log) : undefined,
             });
+            if (proxyConfigured) {
+                this.client.middlewareStack.use(proxyHostHeaderPlugin);
+            }
             this.clientKey = key;
-            this.log.info(`Created BedrockRuntimeClient: profile=${profile}, region=${region || '(from profile)'}`);
+            this.log.info(`Created BedrockRuntimeClient: profile=${profile}, region=${region || '(from profile)'}, proxy=${proxyConfigured ? 'on' : 'off'}`);
         }
         return this.client;
     }

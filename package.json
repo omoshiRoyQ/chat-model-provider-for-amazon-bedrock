@@ -287,6 +287,7 @@
   },
   "devDependencies": {
     "@types/node": "22.20.4",
+    "@types/proxy-from-env": "1.0.4",
     "@types/vscode": "1.106.1",
     "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",
@@ -296,6 +297,9 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1156.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1156.0",
-    "@aws-sdk/credential-providers": "^3.1156.0"
+    "@aws-sdk/credential-providers": "^3.1156.0",
+    "@smithy/node-http-handler": "^4.14.2",
+    "https-proxy-agent": "^7.0.6",
+    "proxy-from-env": "^2.1.0"
   }
 }

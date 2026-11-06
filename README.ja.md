@@ -203,6 +203,7 @@ VS Code 自体が送信する使用状況や診断データは、VS Code の `te
 
 ## トラブルシューティング
 
+- **プロキシ環境で Chat が失敗する**：extension host の環境変数に `HTTPS_PROXY`（または `https_proxy`）を設定してください。Remote-SSH では接続先ホストに設定し、extension host を再起動してください。ストリーミング Chat はプロキシが適用される場合のみ HTTP/1.1 と HTTP/HTTPS CONNECT プロキシを使用し、それ以外は従来の HTTP/2 を維持します。`ALL_PROXY` は代替設定、`HTTP_PROXY` は HTTP 接続先に適用され、小文字の変数が優先されます。`NO_PROXY`/`no_proxy` はカンマまたは空白区切りの完全一致ホスト、`.domain`/`*.domain` の接尾辞、任意のポート指定、`*`（すべて除外）に対応します。CIDR は未対応です。ログ レベルを Debug（**Developer: Set Log Level...**）にすると、**ログを表示** でリクエストごとに `Bedrock runtime transport: proxy=on/off` を確認できます。プロキシ URL や認証情報は記録しません。プロキシ経由のリクエストは HTTP/1.1 の `host` ヘッダーで署名し、直接接続は従来どおり HTTP/2 と独立セッションを使います。クライアント生成時の `proxy` は環境変数の設定有無のみを示します。モデル一覧などの通信は変更せず、VS Code の `http.proxy` 設定は読み取りません。
 - **AWS リージョンが設定されていません**：VS Code 設定の `amazonBedrockProvider.region`、または AWS プロファイルにリージョンを設定してください。
 - **モデル一覧の権限が不足している**：管理者に `bedrock:ListInferenceProfiles` の付与を依頼してください。
 - **モデル呼び出しが拒否される**：プロファイルに `bedrock:InvokeModelWithResponseStream` があり、モデルが選択したリージョンと推論範囲で利用可能か確認してください。Marketplace モデルではサブスクリプション権限も必要な場合があります。
