@@ -203,6 +203,7 @@ VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `tele
 
 ## 疑難排解
 
+- **使用 Proxy 時 Chat 失敗**：在 extension host 的環境變數設定 `HTTPS_PROXY`（或 `https_proxy`）；Remote-SSH 請在遠端主機設定並重新啟動 extension host。串流 Chat 只在適用 Proxy 時使用 HTTP/1.1 與 HTTP/HTTPS CONNECT Proxy，否則維持原本的 HTTP/2。`ALL_PROXY` 是備用設定，`HTTP_PROXY` 適用於 HTTP endpoint，小寫變數優先。`NO_PROXY`/`no_proxy` 支援以逗號或空白分隔的完整主機名稱、`.domain`/`*.domain` 後綴、選用的連接埠，以及 `*`（全部略過）；不支援 CIDR。將記錄層級設為 Debug（**Developer: Set Log Level...**）後，**顯示紀錄** 會逐次請求記錄 `Bedrock runtime transport: proxy=on/off`，不記錄 Proxy 網址或憑證。經由 Proxy 的請求以 HTTP/1.1 的 `host` 標頭簽章，直接連線則照舊使用 HTTP/2 與獨立工作階段。建立 client 時的 `proxy` 只表示是否已設定 Proxy 環境變數。模型清單等其他連線不變；此修正不讀取 VS Code 的 `http.proxy` 設定。
 - **尚未設定 AWS region**：在 VS Code 設定 `amazonBedrockProvider.region`，或在 AWS profile 中設定 region。
 - **缺少模型清單權限**：請管理員授予 `bedrock:ListInferenceProfiles`。
 - **模型呼叫遭拒**：檢查 profile 是否有 `bedrock:InvokeModelWithResponseStream`，並確認模型在所選 region／inference scope 可用；Marketplace 模型也可能需要訂閱權限。

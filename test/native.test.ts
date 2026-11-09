@@ -1,7 +1,75 @@
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
-import { describe, expect, it, vi } from 'vitest';
+import { NodeHttp2Handler } from '@smithy/node-http-handler';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { NativeConverseClient, parseToolInput } from '../src/native';
+import { ProxyAwareHttpHandler } from '../src/proxy';
+
+// Transport selection and cache invalidation are required by the proxy-fix specification.
+describe('NativeConverseClient transport', () => {
+    const clients: BedrockRuntimeClient[] = [];
+    const info = vi.fn();
+    const log = { info } as unknown as vscode.LogOutputChannel;
+    const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) } as unknown as vscode.CancellationToken;
+    const params = { profile: 'test-profile', region: 'test-region', modelId: 'test', messages: [], toolConfig: undefined };
+
+    beforeEach(() => {
+        for (const name of ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY', 'no_proxy', 'NO_PROXY']) {
+            vi.stubEnv(name, '');
+        }
+        vi.spyOn(BedrockRuntimeClient.prototype, 'send').mockImplementation(function (this: BedrockRuntimeClient) {
+            clients.push(this);
+            return Promise.resolve({ stream: (async function* () { yield { contentBlockDelta: { delta: { text: 'hello' } } }; })() }) as never;
+        });
+    });
+
+    afterEach(() => {
+        for (const client of new Set(clients)) {
+            client.destroy();
+        }
+        clients.length = 0;
+        info.mockClear();
+        vi.restoreAllMocks();
+        vi.unstubAllEnvs();
+    });
+
+    it('keeps the SDK default HTTP/2 handler when no proxy is configured', async () => {
+        await new NativeConverseClient(log).stream(params, () => undefined, token);
+        expect(clients[0]?.config.requestHandler).toBeInstanceOf(NodeHttp2Handler);
+        expect(clients[0]?.config.requestHandler).not.toBeInstanceOf(ProxyAwareHttpHandler);
+        expect(clients[0]?.middlewareStack.identify().join()).not.toContain('proxyHostHeaderMiddleware');
+        expect(info).toHaveBeenCalledWith(expect.stringMatching(/proxy=off$/));
+    });
+
+    it('installs a proxy-aware handler without changing streamed content', async () => {
+        vi.stubEnv('HTTPS_PROXY', 'http://user:secret@proxy.example.test:3128');
+        const parts: object[] = [];
+        await new NativeConverseClient(log).stream(params, part => parts.push(part), token);
+        expect(clients[0]?.config.requestHandler).toBeInstanceOf(ProxyAwareHttpHandler);
+        expect(clients[0]?.middlewareStack.identify().join()).toContain('proxyHostHeaderMiddleware');
+        expect(parts).toEqual([{ kind: 'text', text: 'hello' }]);
+        expect(info).toHaveBeenCalledWith(expect.stringMatching(/proxy=on$/));
+        expect(JSON.stringify(info.mock.calls)).not.toMatch(/user|secret|proxy\.example/);
+    });
+
+    it('reuses an unchanged client and rebuilds it when proxy settings or NO_PROXY change', async () => {
+        const destroy = vi.spyOn(BedrockRuntimeClient.prototype, 'destroy');
+        const client = new NativeConverseClient(log);
+        await client.stream(params, () => undefined, token);
+        await client.stream(params, () => undefined, token);
+        expect(clients[0]).toBe(clients[1]);
+        vi.stubEnv('https_proxy', 'http://proxy.example.test:3128');
+        await client.stream(params, () => undefined, token);
+        expect(clients[2]).not.toBe(clients[1]);
+        vi.stubEnv('no_proxy', '*');
+        await client.stream(params, () => undefined, token);
+        expect(clients[3]).not.toBe(clients[2]);
+        vi.stubEnv('https_proxy', '');
+        await client.stream(params, () => undefined, token);
+        expect(clients[4]?.config.requestHandler).not.toBeInstanceOf(ProxyAwareHttpHandler);
+        expect(destroy).toHaveBeenCalledTimes(3);
+    });
+});
 
 /**
  * Usage values are the metadata.usage objects the user observed on 2026-10-03.
