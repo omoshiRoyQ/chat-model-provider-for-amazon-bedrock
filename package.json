@@ -2,7 +2,7 @@
   "name": "chat-model-provider-for-amazon-bedrock",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "publisher": "omoshiRoyQ",
   "icon": "icon.png",
   "license": "MIT",
@@ -296,6 +296,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1156.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1156.0",
-    "@aws-sdk/credential-providers": "^3.1156.0"
+    "@aws-sdk/credential-providers": "^3.1156.0",
+    "@smithy/node-http-handler": "^4.12.1"
   }
 }

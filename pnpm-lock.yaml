@@ -17,6 +17,9 @@ importers:
       '@aws-sdk/credential-providers':
         specifier: ^3.1156.0
         version: 3.1156.0
+      '@smithy/node-http-handler':
+        specifier: ^4.12.1
+        version: 4.12.1
     devDependencies:
       '@types/node':
         specifier: 22.20.4
@@ -1917,7 +1920,7 @@ snapshots:
 
   '@smithy/node-http-handler@4.12.1':
     dependencies:
-      '@smithy/core': 3.35.0
+      '@smithy/core': 3.36.2
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 

@@ -6,6 +6,7 @@ import {
     type ToolConfiguration,
 } from '@aws-sdk/client-bedrock-runtime';
 import { fromIni } from '@aws-sdk/credential-providers';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import * as vscode from 'vscode';
 import type { Document } from './convert';
 
@@ -46,6 +47,12 @@ export class NativeConverseClient {
                 profile,
                 region: region || undefined,
                 credentials: fromIni({ profile }),
+                // The SDK defaults Bedrock Runtime to an HTTP/2 handler, but VS Code's proxy support
+                // (`http.proxy`, system/PAC proxies, `HTTPS_PROXY`/`NO_PROXY`) hooks only Node's
+                // `http`/`https` modules, not `http2`. Behind a proxy, HTTP/2 requests connect directly
+                // and fail with `getaddrinfo ENOTFOUND`, while model listing (`BedrockClient`, HTTP/1.1)
+                // works. ConverseStream does not require HTTP/2, so use the same HTTP/1.1 handler.
+                requestHandler: new NodeHttpHandler(),
             });
             this.clientKey = key;
             this.log.info(`Created BedrockRuntimeClient: profile=${profile}, region=${region || '(from profile)'}`);

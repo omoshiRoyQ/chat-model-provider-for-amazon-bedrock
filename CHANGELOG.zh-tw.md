@@ -2,6 +2,10 @@
 
 [EN](CHANGELOG.md) | [JP](CHANGELOG.ja.md)
 
+## 2.0.2（2026-11-17）
+
+- Chat 請求現在會經由 VS Code 設定的 proxy（`http.proxy` 設定、系統 proxy 或 `HTTPS_PROXY`）送出。先前在必須透過 proxy 連線的網路中，即使模型清單能正常載入，Chat 仍會因 `getaddrinfo ENOTFOUND` 而失敗。
+
 ## 2.0.1（2026-10-26）
 
 - 內含的 AWS SDK 已更新至 3.1156.0。

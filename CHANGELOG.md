@@ -2,6 +2,10 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
 
+## 2.0.2 (2026-11-17)
+
+- Chat requests now go through the proxy configured in VS Code (the `http.proxy` setting, the system proxy, or `HTTPS_PROXY`). Previously, chat failed with `getaddrinfo ENOTFOUND` on networks that require a proxy, even though the model list loaded.
+
 ## 2.0.1 (2026-10-26)
 
 - Updated the bundled AWS SDK to 3.1156.0.

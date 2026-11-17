@@ -2,6 +2,10 @@
 
 [EN](CHANGELOG.md) | [TW](CHANGELOG.zh-tw.md)
 
+## 2.0.2（2026-11-17）
+
+- Chat のリクエストが、VS Code に設定したプロキシ（`http.proxy` 設定、システムのプロキシ、`HTTPS_PROXY`）を経由するようになりました。これまでは、プロキシが必須のネットワークでは、モデル一覧は読み込めても Chat が `getaddrinfo ENOTFOUND` で失敗していました。
+
 ## 2.0.1（2026-10-26）
 
 - 同梱の AWS SDK を 3.1156.0 に更新しました。

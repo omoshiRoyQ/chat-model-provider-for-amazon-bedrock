@@ -1,7 +1,33 @@
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
+import { NodeHttp2Handler, NodeHttpHandler } from '@smithy/node-http-handler';
 import { describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { NativeConverseClient, parseToolInput } from '../src/native';
+
+/**
+ * The SDK defaults Bedrock Runtime to HTTP/2, which VS Code's proxy support (http/https only) does not cover,
+ * so chat failed with `getaddrinfo ENOTFOUND` behind an HTTPS proxy while model listing worked.
+ */
+describe('NativeConverseClient transport', () => {
+    it('使用 HTTP/1.1 handler（可經由 VS Code proxy），而非 HTTP/2', async () => {
+        let client: BedrockRuntimeClient | undefined;
+        const send = vi.spyOn(BedrockRuntimeClient.prototype, 'send').mockImplementation(function (this: BedrockRuntimeClient) {
+            client = this;
+            return Promise.resolve({ stream: (async function* () { })() });
+        } as never);
+        const log = { info: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) } as unknown as vscode.CancellationToken;
+        try {
+            await new NativeConverseClient(log).stream({ profile: 'p', region: 'us-west-2', modelId: 'm', messages: [], toolConfig: undefined }, () => undefined, token);
+        } finally {
+            send.mockRestore();
+        }
+        const handler = client?.config.requestHandler;
+        expect(handler).toBeInstanceOf(NodeHttpHandler);
+        expect(handler).not.toBeInstanceOf(NodeHttp2Handler);
+        client?.destroy();
+    });
+});
 
 /**
  * Usage values are the metadata.usage objects the user observed on 2026-10-03.
