@@ -53,6 +53,40 @@ describe('NativeConverseClient stop reason', () => {
     });
 });
 
+describe('NativeConverseClient transport and proxy caching', () => {
+    it('uses an HTTP/1.1 request handler instead of HTTP/2 and recreates the client when proxyUrl changes', async () => {
+        const handlers: { metadata?: { handlerProtocol?: string } }[] = [];
+        const send = vi.spyOn(BedrockRuntimeClient.prototype, 'send').mockImplementation(async function (this: BedrockRuntimeClient) {
+            handlers.push(this.config.requestHandler as { metadata?: { handlerProtocol?: string } });
+            return {
+                stream: (async function* () {
+                    yield { messageStop: { stopReason: 'end_turn' } };
+                })(),
+            } as never;
+        });
+        const log = { info: vi.fn(), warn: vi.fn() } as unknown as vscode.LogOutputChannel;
+        const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) } as unknown as vscode.CancellationToken;
+        const client = new NativeConverseClient(log);
+        try {
+            await client.stream({ profile: 'p', region: 'us-west-2', modelId: 'm', messages: [], toolConfig: undefined }, () => undefined, token);
+            await client.stream({ profile: 'p', region: 'us-west-2', modelId: 'm', messages: [], toolConfig: undefined }, () => undefined, token);
+            await client.stream({ profile: 'p', region: 'us-west-2', proxyUrl: 'http://proxy.example:8080', modelId: 'm', messages: [], toolConfig: undefined }, () => undefined, token);
+
+            expect(handlers).toHaveLength(3);
+            expect(handlers[0].metadata).toEqual({ handlerProtocol: 'http/1.1' });
+            expect(handlers[0]).toBe(handlers[1]);
+            expect(handlers[2].metadata).toEqual({ handlerProtocol: 'http/1.1' });
+            expect(handlers[2]).not.toBe(handlers[0]);
+            expect(log.info).toHaveBeenCalledWith(expect.stringContaining('proxy=direct'));
+            expect(log.info).toHaveBeenCalledWith(expect.stringContaining('proxy=configured'));
+            expect(log.info).not.toHaveBeenCalledWith(expect.stringContaining('proxy.example'));
+        } finally {
+            client.dispose();
+            send.mockRestore();
+        }
+    });
+});
+
 /**
  * Expected values come from the user's decision (2026-09-29): parse errors must not include the raw tool input,
  * because it is chat-derived content and README states that logs never contain chat content.
@@ -65,6 +99,11 @@ describe('parseToolInput', () => {
         expect(parse).toThrow(/^Failed to parse input for tool "create_file": /);
         expect(parse).toThrow(new RegExp(`; length=${raw.length}$`));
         expect(parse).not.toThrow(/hunter2|config\.ts/);
+    });
+
+    it('uses a fixed error when V8 would echo the invalid JSON', () => {
+        expect(() => parseToolInput('SampleSensitiveText', 'run'))
+            .toThrow(/^Failed to parse input for tool "run": Invalid JSON; length=19$/);
     });
 
     it('JSON 不是物件時，錯誤訊息同樣不含原始內容', () => {

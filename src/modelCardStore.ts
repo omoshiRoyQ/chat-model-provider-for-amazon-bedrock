@@ -1,5 +1,6 @@
 import type * as vscode from 'vscode';
 import { MODEL_CARD_INDEX_URL, modelCardNames, modelCardUrl, parseModelCard, type ModelCard } from './modelCards';
+import { fetchHttpsText } from './proxy';
 
 interface CachedCards {
     /** Cards parsed by an older version lack newer fields (such as pricing) and are fetched again. */
@@ -16,14 +17,7 @@ const VERSION = 2;
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const CONCURRENCY = 6;
 const TIMEOUT_MS = 15_000;
-
-async function fetchText(url: string): Promise<string> {
-    const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText} (${url})`);
-    }
-    return response.text();
-}
+const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 
 /**
  * Caches token limits and prices from public AWS model-card pages.
@@ -62,17 +56,18 @@ export class ModelCardStore {
      * Downloads the page index and every model card not cached yet; `force` downloads every card again (Update Prices).
      * Throws if the index cannot be read. Pages that fail are skipped and the searched list is cleared, so the next model-list load tries again.
      */
-    refresh(unknownIds: readonly string[], now = Date.now(), force = false): Promise<{ fetched: number; failed: string[] }> {
-        this.inFlight ??= this.download(unknownIds, now, force).finally(() => {
+    refresh(unknownIds: readonly string[], now = Date.now(), force = false, proxyUrl?: string): Promise<{ fetched: number; failed: string[] }> {
+        this.inFlight ??= this.download(unknownIds, now, force, proxyUrl).finally(() => {
             this.inFlight = undefined;
         });
         return this.inFlight;
     }
 
-    private async download(unknownIds: readonly string[], now: number, force: boolean): Promise<{ fetched: number; failed: string[] }> {
+    private async download(unknownIds: readonly string[], now: number, force: boolean, proxyUrl?: string): Promise<{ fetched: number; failed: string[] }> {
         const previous = this.cached();
         const reusable = !force && now - previous.checkedAt < MAX_AGE_MS ? previous.cards : {};
-        const names = modelCardNames(await fetchText(MODEL_CARD_INDEX_URL));
+        const downloadOptions = { timeoutMs: TIMEOUT_MS, maxBytes: MAX_DOWNLOAD_BYTES, proxyUrl };
+        const names = modelCardNames(await fetchHttpsText(MODEL_CARD_INDEX_URL, downloadOptions));
         if (names.length === 0) {
             throw new Error(`No model cards were found in ${MODEL_CARD_INDEX_URL}`);
         }
@@ -89,7 +84,7 @@ export class ModelCardStore {
             while (next < pending.length) {
                 const name = pending[next++];
                 try {
-                    cards[name] = parseModelCard(name, await fetchText(modelCardUrl(name)));
+                    cards[name] = parseModelCard(name, await fetchHttpsText(modelCardUrl(name), downloadOptions));
                 } catch {
                     failed.push(name);
                     // Keep the last good copy so one failed page does not drop a model's price; cards removed from the index are not kept.

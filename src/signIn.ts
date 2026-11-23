@@ -53,15 +53,22 @@ export class SsoSignIn {
                         this.log.info(`Running aws sso login --profile ${profile}`);
                         // On Windows, spawn looks for aws.exe in the cwd before PATH (verified with Node 24.19); use the home directory so a project folder is never searched.
                         const child = spawn('aws', ['sso', 'login', '--profile', profile], { shell: false, windowsHide: true, cwd: homedir() });
-                        const forward = (chunk: Buffer) => {
-                            for (const line of chunk.toString('utf8').split(/\r?\n/)) {
-                                if (line.trim()) {
-                                    this.log.info(`[aws sso login] ${redactSignInOutput(line)}`);
-                                }
+                        const logLine = (line: string) => {
+                            if (line.trim()) {
+                                this.log.info(`[aws sso login] ${redactSignInOutput(line)}`);
                             }
                         };
-                        child.stdout.on('data', forward);
-                        child.stderr.on('data', forward);
+                        // Redact complete lines so a chunk boundary cannot expose part of a URL or code.
+                        for (const stream of [child.stdout, child.stderr]) {
+                            let pending = '';
+                            stream.setEncoding('utf8');
+                            stream.on('data', (chunk: string) => {
+                                const lines = (pending + chunk).split(/\r?\n/);
+                                pending = lines.pop() ?? '';
+                                lines.forEach(logLine);
+                            });
+                            stream.once('end', () => logLine(pending));
+                        }
                         const cancel = token.onCancellationRequested(() => {
                             this.log.info('User cancelled aws sso login');
                             child.kill();

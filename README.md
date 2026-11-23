@@ -1,6 +1,6 @@
 # Chat Model Provider for Amazon Bedrock
 
-[TW](README.zh-tw.md) | [JP](README.ja.md)
+[TW](README.zh-tw.md) | [JA](README.ja.md)
 
 Use Amazon Bedrock models in VS Code Chat with your AWS named profile (SSO supported). No API keys are used or stored, and usage or diagnostic data is not sent to the author. Chat requests go to Amazon Bedrock; usage totals, per-model thinking settings, and downloaded pricing data are stored in VS Code's local extension storage.
 
@@ -13,9 +13,9 @@ This extension uses only the Native ConverseStream API on the `bedrock-runtime` 
 - Supports Chat Agent tool calling and image input for models that support it.
 - Lets you set thinking effort per model. Unsupported settings may be adjusted by the extension or rejected by Bedrock.
 - Lets you create additional Chat models with a fixed thinking effort for models with configurable thinking; the original model remains available. Preset names are generated from the base model's display name, effort, and fixed route, for example `Luna-Medium (Geo)`.
-- Shows this period's input and output tokens in the status bar, and per-model request counts, tokens (including prompt cache reads and writes), and estimated costs in the usage panel.
+- Shows this period's input and output token totals in the status bar, with per-model request counts, tokens (including prompt cache reads and writes), and estimated costs in the usage panel. Reports each request's Bedrock token usage to VS Code for Chat Session Info/context window information, separately from period totals and without adding to Copilot credit totals.
 - Uses Bedrock prompt caching for Claude models that support it, so repeated conversation context can be read from the cache.
-- Lets you update the price table, set custom prices, and configure the monthly usage reset day and UTC hour.
+- Lets you update the price table, set custom prices, and configure the monthly usage reset day and UTC hour. Usage totals are shared only across Hosts that can access the same shared local storage (while remaining grouped by AWS profile), and scheduled resets automatically refresh the status bar and any open usage panel.
 
 ## Requirements
 
@@ -148,9 +148,11 @@ The preset menu edits User settings only. If a workspace override is active, it 
   }
   ```
 
+- **Proxy URL**: Set the optional `amazonBedrockProvider.proxyUrl` (machine scope) to an `http://` or `https://` proxy URL. Only this extension uses it for Amazon Bedrock requests and public AWS price/model-card downloads. The extension does not read `HTTP_PROXY` or `HTTPS_PROXY`, and embedded credentials in the URL are not supported.
+
 ## Usage and Costs
 
-Input and output token usage reported by Bedrock is accumulated by AWS profile, model, and inference route. Costs are estimates, not AWS billing data; actual charges are shown on your AWS bill. **Update Prices** downloads the public AWS price list and the price tables on AWS model cards. Prices come from your custom prices first, then the price list, then the model cards, so GPT models missing from the price list are still estimated; the cost column marks model card prices with **model card**. Models without any of these prices show **No price data**.
+Input and output token usage reported by Bedrock is accumulated by AWS profile, model, and inference route in a shared usage file in the Default Profile's VS Code extension `globalStorage` directory, so only Hosts that can access the same shared local storage contribute to the totals, which remain grouped by AWS profile. Each request's Bedrock input/output counts are also reported to VS Code for Chat Session Info/context window information; these are separate from period totals and do not affect Copilot credit totals. When the scheduled reset time arrives, the extension automatically refreshes the status bar and any open usage panel. Hosts that can access the same local path use the same JSON usage file; Node's built-in SQLite is used only to coordinate the write lock and does not store usage totals. If no shared local path is available, the lock times out, or the storage is unavailable, that usage record is skipped: it is not saved to the VS Code Profile or queued for later, so estimates may be lower. Skipping that record does not delete or move existing usage; scheduled and manual resets continue to work normally. This does not affect Chat responses, Session Info token reporting, or your AWS bill. The existing one-time migration of legacy usage from VS Code `globalState` remains; skipped new records are not migrated. Costs are estimates, not AWS billing data; actual charges are shown on your AWS bill. **Update Prices** downloads the public AWS price list and the price tables on AWS model cards. Prices come from your custom prices first, then the price list, then the model cards, so GPT models missing from the price list are still estimated; the cost column marks model card prices with **model card**. Models without any of these prices show **No price data**.
 
 Preset requests are recorded and priced under the underlying model and route, so they are grouped with usage from the original model on that route. The selected effort can affect the token counts reported by Bedrock; it does not add a separate price or change the cost-estimation rules.
 
@@ -166,9 +168,13 @@ The status bar shows this period's input and output tokens. Select the token tot
 
 This extension does not send usage, diagnostic, or analytics data to the author. Usage totals are stored locally in VS Code, and diagnostic logs are available locally for troubleshooting. Chat content is sent to Amazon Bedrock as described below. The extension makes these network requests:
 
-1. Amazon Bedrock in the selected region, through your AWS profile (loading the model list and streaming chat).
+1. Amazon Bedrock in the selected region, through your AWS profile (loading the model list and streaming chat). The extension uses the SDK's default HTTPS endpoints for Bedrock and ignores custom Bedrock endpoint overrides from AWS configuration files and environment variables.
 2. An HTTPS GET request to the public AWS price file when you select **Update Prices**. The request contains no account information or credentials.
 3. HTTPS GET requests to public AWS model card pages (docs.aws.amazon.com) to read context windows, maximum output tokens, and prices: in the background when your model list includes a model missing from the built-in list (cached for 7 days), and for every model card when you select **Update Prices**. The requests contain no account information or credentials.
+
+Public downloads follow redirects only within the original HTTPS origin. The size limit applies both before and after decompression: 64 MiB for the price file and 8 MiB per model card or index.
+
+If `amazonBedrockProvider.proxyUrl` is set, only this extension uses that `http://` or `https://` proxy for the requests above and leaves `HTTP_PROXY` and `HTTPS_PROXY` environment variables unread. Embedded credentials in the proxy URL are not supported. TLS certificates must be trusted for both an HTTPS proxy and the destination server. Disabling certificate verification in the Node.js environment does not make this extension skip TLS verification.
 
 When you select the sign-in button, the extension starts AWS CLI `aws sso login` locally, and AWS CLI opens your browser to complete sign-in (for example, to choose an account and approve access). The extension never starts sign-in automatically in the background.
 
@@ -176,7 +182,8 @@ VS Code's own usage and diagnostic data sharing follows the VS Code `telemetry.t
 
 ### Credentials
 
-- Only the AWS named profile you specify is used. API keys and directly entered access keys are not supported.
+- Bedrock requests use SigV4 with the AWS named profile you specify. API keys (including `AWS_BEARER_TOKEN_BEDROCK`) and directly entered access keys are not accepted.
+- If the selected profile uses `credential_process`, the AWS SDK may run the configured local command when it loads the model list, without waiting for you to select **Sign in**. Choose a profile whose configuration and credential command you trust.
 - The AWS SDK resolves credentials through the profile for every request. The extension never stores access keys, secret keys, session tokens, or SSO tokens in VS Code settings, `globalState`, or logs.
 - AWS CLI handles SSO sign-in. The AWS SDK reads `~/.aws/config` and `~/.aws/credentials` to resolve the profile, and may refresh an SSO token that is about to expire in `~/.aws/sso/cache/`, as AWS CLI does. The extension does not modify any other AWS files.
 
@@ -189,13 +196,14 @@ VS Code's own usage and diagnostic data sharing follows the VS Code `telemetry.t
 
 ### Local Storage
 
-- VS Code `globalState` stores only usage totals (profile name, model ID, token and request counts), per-model thinking settings, downloaded price tables, and token limits and prices read from AWS model cards. This data is not synced to other devices. Reset usage totals from the usage panel and thinking settings with **Set Thinking Effort**; downloaded price tables are replaced when you select **Update Prices**.
+- A shared usage file in the Default Profile's extension `globalStorage` directory stores usage totals (profile name, model ID, token and request counts). Hosts that can access the same shared local storage accumulate usage in this file, while totals remain grouped by AWS profile. Scheduled resets automatically refresh the status bar and any open usage panel.
+- VS Code `globalState` stores per-model thinking settings, downloaded price tables, and token limits and prices read from AWS model cards. This data is not synced to other devices. Reset thinking settings with **Set Thinking Effort**; downloaded price tables are replaced when you select **Update Prices**.
 - The extension does not write chat content to local storage or logs.
 
 ### Logs
 
 - **Show Logs** records only diagnostics such as profile name, region, model ID, message counts, tool names, and error codes, never chat content. AWS principal ARNs and email addresses in error messages are redacted.
-- Logs include AWS CLI sign-in output with URL parameters, the organization name in the Start URL, and email addresses replaced by `[redacted]`. Still review logs for personal information before sharing. If the browser does not open during sign-in, run `aws sso login --profile <profile>` in a terminal.
+- The extension redacts URL parameters, the organization name in the Start URL, email addresses, and one-time device authorization codes before recording AWS CLI sign-in output. Still review logs for personal information before sharing. If the browser does not open during sign-in, run `aws sso login --profile <profile>` in a terminal.
 
 ### Open Source
 
@@ -207,6 +215,7 @@ The source code is available on [GitHub](https://github.com/omoshiRoyQ/chat-mode
 - **Model list permissions are missing**: Ask your administrator to grant `bedrock:ListInferenceProfiles`.
 - **Model invocation is denied**: Check that the profile has `bedrock:InvokeModelWithResponseStream` and that the model is available in the selected region and inference scope. Marketplace models may also require subscription permissions.
 - **SSO sign-in has expired**: Select the Bedrock sign-in button or run `aws sso login --profile <profile>`, then resend the failed Chat request.
+- **A configured network path is not being used**: Check that `amazonBedrockProvider.proxyUrl` is an `http://` or `https://` URL without embedded credentials. This extension does not read `HTTP_PROXY` or `HTTPS_PROXY`.
 - **Detailed diagnostics**: Run **Show Logs** from the Command Palette. Redact personal information and verification details before sharing logs.
 
 ## Development
@@ -223,6 +232,6 @@ Run `pnpm run package:verified` to run all unit tests, then package the extensio
 
 This project is licensed under MIT; see [LICENSE](LICENSE). Licenses and copyright notices for bundled dependencies are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-This project is maintained solely by its author. You are welcome to fork it and turn it into your own project; just credit this project as the source and keep the copyright and license notice required by the MIT license.
+This project is maintained solely by its author, who does not accept external pull requests. Issue reports are welcome, as are forks under the MIT license, provided this project is credited as the source and the required copyright and license notice is preserved.
 
 Amazon Bedrock and AWS are trademarks of Amazon.com, Inc. or its affiliates. This independent project is not affiliated with, endorsed by, or sponsored by Amazon.com, Inc. or AWS.

@@ -6,7 +6,7 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 
 - 認證只使用使用者指定的 AWS named profile，透過 AWS SDK 的 `fromIni({ profile })` 取得憑證，支援 SSO。不支援 API key、直接提供 access key 或 SDK default credential chain；除非使用者明確提出需求，否則不得擴充。理由：使用者選擇安全性優先於泛用性，避免增加憑證儲存與選擇路徑。
 - 測試用的 profile 名稱與 region 由使用者提供，不可寫死在程式碼或測試中。
-- `profile`、`region`、`inferenceScope` 設定刻意不宣告 `scope`，受信任專案的 `.vscode/settings.json` 可以覆寫。這不算資安問題，資安審查不必列出。理由：使用者的決定（2026-10-04）；專案只能指定名稱，認證仍只能用使用者 `~/.aws/config` 裡既有的 profile。`modelVisibility`、`modelPresets`、`customPricing`、`usageResetDay`、`usageResetHour` 同樣可被受信任專案覆寫，屬同一項決定（2026-10-25），資安審查不必列出；影響是專案可顯示較貴的模型，或壓低費用估算。
+- `profile`、`region`、`inferenceScope` 設定刻意不宣告 `scope`，受信任專案的 `.vscode/settings.json` 可以覆寫。這不算資安問題，資安審查不必列出。理由：使用者的決定（2026-10-04）；專案只能指定名稱，認證仍只能用使用者 `~/.aws/config` 裡既有的 profile。`modelVisibility`、`modelPresets`、`customPricing`、`usageResetDay`、`usageResetHour` 同樣可被受信任專案覆寫，屬同一項決定（2026-10-25），資安審查不必列出；影響是專案可顯示較貴的模型，或壓低費用估算。`proxyUrl` 則宣告為 `machine` scope，避免工作區設定覆寫網路代理路徑，且刻意不讀取 `HTTP_PROXY`／`HTTPS_PROXY` 等泛用環境變數、不接受網址內嵌帳密（2026-11-19 決定）。
 
 ## Do Not Read
 
@@ -34,9 +34,9 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 
 ## Documentation and Localization
 
-- 使用者文件及介面維持 EN／TW／JP，EN 為預設，TW 使用臺灣華語；README 與 CHANGELOG 各有 `.md`、`.zh-tw.md`、`.ja.md`。修改任一語言時同步另外兩語並維持章節／條目對應；無法同步則明列未完成，不改寫歷史條目。
+- 使用者文件及介面維持 EN／TW／JA，EN 為預設，對應 `en-US`（美式英文）、`zh-TW`（臺灣中文字形與臺灣用語）、`ja-JP`（日文常用漢字，不套用臺灣中文字形規則），外顯標示只寫 EN／TW／JA；README 與 CHANGELOG 各有 `.md`、`.zh-tw.md`、`.ja.md`。修改任一語言時同步另外兩語並維持章節／條目對應；無法同步則明列未完成，不改寫歷史條目。
 - Manifest 字串使用 `package.nls.json`、`package.nls.zh-tw.json`、`package.nls.ja.json`；執行期字串以英文原文作為 `vscode.l10n.t` key，翻譯放在 `l10n/bundle.l10n.zh-tw.json` 與 `l10n/bundle.l10n.ja.json`，不建立英文 bundle。修改 UI 或字串時同步翻譯並執行 `pnpm run check:l10n`；動態訊息仍須人工核對。
-- thinking effort 的 `Default` 在 EN／TW／JP 均保留英文，選單與重設說明一致；這是語系例外，不改內部 `default` 值、儲存格式或模型請求。反例：TW 翻成「預設」、JP 翻成「既定」。
+- thinking effort 的 `Default` 在 EN／TW／JA 均保留英文，選單與重設說明一致；這是語系例外，不改內部 `default` 值、儲存格式或模型請求。反例：TW 翻成「預設」、JA 翻成「既定」。
 
 ## Project-specific Rules
 
@@ -51,13 +51,15 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 
 - CHANGELOG 每項變更用一至兩句完整句子描述使用者可見行為，不加 Added／Fixed 等分類；三語檔案結構、條目數與順序相符。新版沿用前版樣式並置頂，不改寫歷史。
 - GitHub release 本文用英文，條目取自該版 CHANGELOG；只有變更涉及資料／網路、權限／登入、升級手動步驟或費用時，才加注意事項。發布說明草稿不代表已發布。
-- `## Other languages`：`[TW](…/blob/<tag>/CHANGELOG.zh-tw.md) | [JP](…/blob/<tag>/CHANGELOG.ja.md)`，連結固定在本次 tag、不連 `main`；語言代號為 EN、TW、JP。
+- `## Other languages`：`[TW](…/blob/<tag>/CHANGELOG.zh-tw.md) | [JA](…/blob/<tag>/CHANGELOG.ja.md)`，連結固定在本次 tag、不連 `main`；語言代號為 EN、TW、JA。
 - 連結前綴：`https://github.com/omoshiRoyQ/chat-model-provider-for-amazon-bedrock/blob/<tag>/`。附件：對應該版建置的 `chat-model-provider-for-amazon-bedrock-<version>.vsix`。
 
 ## Code Conventions
 
 - `modelVisibility` 是 UI／JSON 共用的 window scope 物件；舊的 `modelFilter` 已移除（使用者 2026-10-25 決定）。以 inspect 明確值判斷，不用 manifest default 或 get 的合併物件；缺設定時預設 Anthropic＋OpenAI、版本不限。Workspace 物件完整取代 User，User 內的本機／Remote User 合併依 VS Code；無效物件採空選取並保留診斷，不當成全部。選單只詢問已選供應商的版本門檻，selected 模式儲存時清除未選供應商的既有門檻；GPT 門檻設定時同時隱藏 GPT-OSS 系列。反例：無效物件被當成全部，或留下未選供應商的舊門檻。
-- Settings manifest 順序固定為 `profile`、`region`、`inferenceScope`、`modelVisibility`、`modelPresets`、`usageResetDay`、`usageResetHour`、`customPricing`，`order` 依序 1–8。
+- Settings manifest 順序固定為 `profile`、`region`、`inferenceScope`、`modelVisibility`、`modelPresets`、`usageResetDay`、`usageResetHour`、`customPricing`、`proxyUrl`，`order` 依序 1–9。
+- 使用量統計集中儲存於 Default Profile 的擴充功能 `globalStorage` 共用檔案（version 1 `shared-usage.json`，仍依 AWS `profile` 名稱分組）。可存取同一本機目錄的 VS Code Profile 與 Copilot Harness／Local Harness 以 Node 內建 SQLite 交易協調跨行程鎖；SQLite 不存使用量。若沒有可共用的本機路徑、鎖逾時或寫入失敗，該筆本機用量不儲存、不另存各 Profile、也不事後補記；Chat 回應與 Session Info token 不受影響，但本機估算可能偏低。Chat 回應同時以 `mimeType: 'usage'` 的 `LanguageModelDataPart` 回報 token 數，不帶 Copilot 計費欄位以免混入 Copilot AI Credits（2026-11-23 決定）。
+- Bedrock 與認證子請求都忽略 AWS SDK 的自訂 endpoint 設定，只連 SDK 預設 HTTPS endpoint；Proxy 只由 machine scope 的 `proxyUrl` 明確設定。直連、HTTPS proxy 與 proxy tunnel 後的目的端都必須驗證 TLS 憑證，不因 Node 環境的設定略過驗證。
 - 不可複製三個參考 extension（`arifum.bedrock-vscode-chat`、`easytocloud.bedrock-mantle-vscode-chat`、`abhimanyus1997.bedrock-bridge-copilot`）的程式碼，只能參考做法。理由：使用者的決定。
 - Credential 一律交給 AWS SDK provider（如 `fromIni({ profile })`），每次請求都透過 provider 取得；不可把 `accessKeyId`、`secretAccessKey`、`sessionToken` 存進自己的變數或快取重用。理由：參考 extension 在 SSO 過期後不會重新整理，就是這個原因。
 - SSO token 過期（`ExpiredTokenException`、`TokenRefreshRequired`、`CredentialsProviderError` 等）時，顯示明確錯誤並提示執行 `aws sso login --profile <name>`，提供「登入」按鈕；不可只回一般錯誤，也不可無聲重試。只有使用者按下按鈕才執行 `aws sso login`，不可背景自動執行，也不可自動重送失敗的 Chat 請求。理由：自動開瀏覽器會嚇到使用者，而 VS Code 會頻繁在背景查詢模型清單。

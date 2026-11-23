@@ -4,5 +4,6 @@ dist/
 package-lock.json
 yarn.lock
 .vscode/settings.json
-.agent-launchpad/
+.inu/
+.q-work/
 .tmp/

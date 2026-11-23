@@ -1,3 +1,7 @@
 allowBuilds:
   '@vscode/vsce-sign': false
   esbuild: false
+
+overrides:
+  # vsce still requires vulnerable minimatch 10; 11.0.1 fixes GHSA-g3hv-75wg-m249.
+  '@vscode/vsce>minimatch': 11.0.1

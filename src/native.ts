@@ -5,9 +5,9 @@ import {
     type SystemContentBlock,
     type ToolConfiguration,
 } from '@aws-sdk/client-bedrock-runtime';
-import { fromIni } from '@aws-sdk/credential-providers';
 import * as vscode from 'vscode';
 import type { Document } from './convert';
+import { BEDROCK_CLIENT_SECURITY, createAwsRequestHandler, createNamedProfileCredentials, type AwsRequestHandler } from './proxy';
 
 /** Token usage reported in Bedrock's final stream metadata event. */
 export interface TokenUsage {
@@ -31,24 +31,39 @@ export type StreamPart =
  * so the next request can succeed after the user runs `aws sso login`; VS Code does not need to be restarted.
  * Only the client object is cached here; accessKeyId, secretAccessKey, and sessionToken are never stored.
  */
-export class NativeConverseClient {
+export class NativeConverseClient implements vscode.Disposable {
     private client: BedrockRuntimeClient | undefined;
+    private requestHandler: AwsRequestHandler | undefined;
     private clientKey = '';
 
     constructor(private readonly log: vscode.LogOutputChannel) { }
 
-    private getClient(profile: string, region: string): BedrockRuntimeClient {
-        const key = `${profile}|${region}`;
+    dispose(): void {
+        this.client?.destroy();
+        this.requestHandler?.destroy();
+        this.client = undefined;
+        this.requestHandler = undefined;
+        this.clientKey = '';
+    }
+
+    private getClient(profile: string, region: string, proxyUrl: string): BedrockRuntimeClient {
+        const key = JSON.stringify([profile, region, proxyUrl]);
         if (!this.client || this.clientKey !== key) {
+            const nextHandler = createAwsRequestHandler(proxyUrl);
             this.client?.destroy();
-            this.client = new BedrockRuntimeClient({
+            this.requestHandler?.destroy();
+            this.requestHandler = nextHandler;
+            const client: BedrockRuntimeClient = new BedrockRuntimeClient({
                 // `profile` lets the SDK read the region from the profile when region is empty.
+                ...BEDROCK_CLIENT_SECURITY,
                 profile,
                 region: region || undefined,
-                credentials: fromIni({ profile }),
+                requestHandler: nextHandler,
+                credentials: createNamedProfileCredentials(profile, nextHandler, () => client.config.region()),
             });
+            this.client = client;
             this.clientKey = key;
-            this.log.info(`Created BedrockRuntimeClient: profile=${profile}, region=${region || '(from profile)'}`);
+            this.log.info(`Created BedrockRuntimeClient: profile=${profile}, region=${region || '(from profile)'}, proxy=${proxyUrl ? 'configured' : 'direct'}`);
         }
         return this.client;
     }
@@ -64,6 +79,7 @@ export class NativeConverseClient {
         params: {
             profile: string;
             region: string;
+            proxyUrl?: string;
             modelId: string;
             messages: Message[];
             system?: SystemContentBlock[];
@@ -81,7 +97,7 @@ export class NativeConverseClient {
         // Store in-progress toolUse blocks by contentBlockIndex.
         const pendingTools = new Map<number, { callId: string; name: string; input: string }>();
         try {
-            const response = await this.getClient(params.profile, params.region).send(
+            const response = await this.getClient(params.profile, params.region, params.proxyUrl ?? '').send(
                 new ConverseStreamCommand({
                     modelId: params.modelId,
                     messages: params.messages,
@@ -158,14 +174,15 @@ export function parseToolInput(raw: string, toolName: string): object {
     if (raw.trim() === '') {
         return {};
     }
+    let parsed: unknown;
     try {
-        const parsed: unknown = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-            return parsed;
-        }
-        throw new Error('Tool input is not a JSON object');
-    } catch (error) {
-        // Omit the raw input: it is chat-derived model output, and this message is written to the log.
-        throw new Error(`Failed to parse input for tool "${toolName}": ${(error as Error).message}; length=${raw.length}`);
+        parsed = JSON.parse(raw);
+    } catch {
+        // V8 can include chat-derived input in a JSON parse error.
+        throw new Error(`Failed to parse input for tool "${toolName}": Invalid JSON; length=${raw.length}`);
     }
+    if (!parsed || typeof parsed !== 'object') {
+        throw new Error(`Failed to parse input for tool "${toolName}": Tool input is not a JSON object; length=${raw.length}`);
+    }
+    return parsed;
 }

@@ -20,7 +20,11 @@ export interface UsagePanelActions {
 export class UsagePanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
 
-    constructor(private readonly actions: UsagePanelActions) { }
+    constructor(
+        private readonly actions: UsagePanelActions,
+        /** Called when the panel opens and again after it closes, so callers can poll only while it is visible. */
+        private readonly onVisibilityChange?: (open: boolean) => void,
+    ) { }
 
     show(view: UsageView): void {
         if (this.panel) {
@@ -30,8 +34,12 @@ export class UsagePanel implements vscode.Disposable {
                 enableScripts: true,
                 localResourceRoots: [],
             });
-            this.panel.onDidDispose(() => (this.panel = undefined));
+            this.panel.onDidDispose(() => {
+                this.panel = undefined;
+                this.onVisibilityChange?.(false);
+            });
             this.panel.webview.onDidReceiveMessage((m: PanelMessage) => this.onMessage(m));
+            this.onVisibilityChange?.(true);
         }
         this.render(view);
     }

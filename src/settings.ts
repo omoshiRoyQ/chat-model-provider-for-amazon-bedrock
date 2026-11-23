@@ -17,6 +17,8 @@ export interface BedrockSettings {
     readonly usageResetHour: number;
     /** User-defined prices, which take precedence over the price table. */
     readonly customPricing: CustomPrices;
+    /** Optional HTTP(S) proxy URL used only by this extension; empty string connects directly without reading environment variables. */
+    readonly proxyUrl: string;
 }
 
 export const CONFIG_SECTION = 'amazonBedrockProvider';
@@ -25,6 +27,7 @@ export function readSettings(): BedrockSettings {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     // settings.json can contain manually entered values outside the supported scope or enum; fall back to defaults in that case.
     const scope = config.get<string>('inferenceScope');
+    const rawProxyUrl = config.get<unknown>('proxyUrl');
     return {
         profile: (config.get<string>('profile') ?? '').trim(),
         region: (config.get<string>('region') ?? '').trim(),
@@ -33,6 +36,7 @@ export function readSettings(): BedrockSettings {
         usageResetDay: clampInt(config.get<number>('usageResetDay'), 1, 31, 1),
         usageResetHour: clampInt(config.get<number>('usageResetHour'), 0, 23, 0),
         customPricing: readCustomPricing(config.get<unknown>('customPricing')),
+        proxyUrl: typeof rawProxyUrl === 'string' ? rawProxyUrl.trim() : '',
     };
 }
 

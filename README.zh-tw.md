@@ -1,6 +1,6 @@
 # Chat Model Provider for Amazon Bedrock
 
-[EN](README.md) | [JP](README.ja.md)
+[EN](README.md) | [JA](README.ja.md)
 
 使用你指定的 AWS named profile（支援 SSO），在 VS Code Chat 使用 Amazon Bedrock 模型。Extension 不使用或儲存 API key，也不會將使用狀況或診斷紀錄傳送給作者。Chat 請求會傳送到 Amazon Bedrock；使用量統計、各模型的 thinking 設定與下載的價格表會儲存在 VS Code 的本機 extension storage。
 
@@ -13,9 +13,9 @@
 - 支援 Chat Agent 工具呼叫；模型支援圖片輸入時，也可傳送圖片。
 - 可依模型設定 thinking effort；不支援的選項可能由 extension 調整，或由 Bedrock 拒絕。
 - 可為支援設定 thinking 的模型建立固定 effort 的額外 Chat 項目；原始模型仍保留。組合名稱會依據底層模型的顯示名稱、effort 與固定路由自動產生，例如 `Luna-Medium (Geo)`。
-- 狀態列顯示本期的輸入／輸出 token，使用量面板依模型列出請求數、token 數（含 prompt cache 的讀取與寫入）與費用估算。
+- 狀態列顯示本期輸入／輸出 token 累計；使用量面板依模型列出請求數、token 數（含 prompt cache 的讀取與寫入）與費用估算。每次請求的 Bedrock token 用量另行回報給 VS Code，供 Chat Session Info／context window 資訊使用；這不是本期累計，也不會混入 Copilot credit 統計。
 - 支援 prompt cache 的 Claude 模型會使用 Bedrock prompt caching，重複的對話內容可以從快取讀取。
-- 可更新價格表、設定自訂價格、設定每月使用量重設日期與 UTC 時間。
+- 可更新價格表、設定自訂價格、設定每月使用量重設日期與 UTC 時間。只有可存取同一份共用本機儲存的 Host 會共用使用量總計，並依 AWS profile 分組；排程重設時間一到，就會自動更新狀態列和已開啟的使用量面板。
 
 ## 必要條件
 
@@ -148,15 +148,17 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
   }
   ```
 
+- **Proxy URL**：可設定選填的 `amazonBedrockProvider.proxyUrl`（machine scope），值須為 `http://` 或 `https://` proxy 網址。只有此擴充功能會使用它連線 Amazon Bedrock，以及下載 AWS 公開價格表／模型卡；不會讀取 `HTTP_PROXY` 或 `HTTPS_PROXY` 環境變數，也不支援在網址中內嵌憑證。
+
 ## 使用量與費用
 
-Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route 累計。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。按下 **更新價格** 會下載 AWS 公開價格表，以及 AWS model card 上的價格表。單價依序取自自訂價格、公開價格表、model card，所以公開價格表沒有的 GPT 模型也能估算費用；價格取自 model card 時，費用欄會標示 **model card**。三者都沒有價格的模型會顯示 **無價格資料**。
+Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route，累計到 Default Profile 的 VS Code 擴充功能 `globalStorage` 目錄中的共用使用量檔案；因此只有可存取同一份共用本機儲存的 Host 會累計到同一份總計，資料仍依 AWS profile 分組。每次請求的 Bedrock 輸入／輸出數量另行回報給 VS Code，供 Chat Session Info／context window 資訊使用；這與本期累計分開，也不會影響 Copilot credit 總計。排程重設時間到達時，擴充功能會自動更新狀態列和已開啟的使用量面板。可存取同一本機路徑的 Host 會使用同一份 JSON 使用量檔案；Node 內建的 SQLite 只用來協調寫入鎖，不會儲存使用量。若沒有可共用的本機路徑、鎖逾時或儲存空間無法使用，該筆使用量會略過，不會改存到 VS Code Profile，也不會排隊日後補記，因此估算可能偏低；略過該筆時不會刪除或搬移既有使用量；排程或手動重設仍照常運作。這不影響 Chat 回應、Session Info token 數或 AWS 帳單。既有的一次性 VS Code `globalState` 舊使用量遷移仍會保留；新略過的記錄不會搬移。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。按下 **更新價格** 會下載 AWS 公開價格表，以及 AWS 模型卡 上的價格表。單價依序取自自訂價格、公開價格表、模型卡，所以公開價格表沒有的 GPT 模型也能估算費用；價格取自 模型卡 時，費用欄會標示 **模型卡**。三者都沒有價格的模型會顯示 **無價格資料**。
 
 固定組合的請求會依底層模型與路由記錄使用量及估算費用，因此會和同路由的原始模型累計在一起。effort 可能影響 Bedrock 回報的 token 數，但不會新增另一套價格或改變費用估算方式。
 
-部分 GPT 模型在單一請求的輸入超過 272K token 時，整個請求都改用長 context 價格（依各自的 model card）；Claude Haiku 5.5 超過 100K token 時也一樣（依 Anthropic 價格頁，AWS 的 model card 沒有標示門檻）。Extension 會在記錄每個請求時，判斷輸入 token 數是否超過門檻（快取讀取與寫入也算在輸入內），超過的請求用長 context 單價計算。這個版本之前記錄的使用量一律用一般單價計算。自訂價格沒有長 context 分級，模型有長 context 請求且只有自訂價格時，費用欄會顯示 **沒有長 context 價格**。
+部分 GPT 模型在單一請求的輸入超過 272K token 時，整個請求都改用長 context 價格（依各自的 模型卡）；Claude Haiku 5.5 超過 100K token 時也一樣（依 Anthropic 價格頁，AWS 的 模型卡 沒有標示門檻）。Extension 會在記錄每個請求時，判斷輸入 token 數是否超過門檻（快取讀取與寫入也算在輸入內），超過的請求用長 context 單價計算。這個版本之前記錄的使用量一律用一般單價計算。自訂價格沒有長 context 分級，模型有長 context 請求且只有自訂價格時，費用欄會顯示 **沒有長 context 價格**。
 
-對於 [AWS 文件](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)列為支援 prompt caching 的 Claude 模型，extension 會在工具定義、system prompt 與最新一則訊息的結尾加上 cache point。GPT 等其他模型也可能自行回報快取讀取或寫入。使用量面板的 **輸入 token** 分成 **輸入**（未快取）、**快取讀取**、**快取寫入**三欄，相加就是總輸入，狀態列顯示的是這個總數。快取讀取與寫入分別計價。快取單價來自公開價格表或 model card（GPT 的快取寫入用 30 分鐘的單價）；如果價格是用舊版下載的，請再按一次 **更新價格**。模型有快取 token 但沒有快取單價時，費用欄會顯示 **沒有快取價格**，該模型的費用不計入總計。
+對於 [AWS 文件](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)列為支援 prompt caching 的 Claude 模型，extension 會在工具定義、system prompt 與最新一則訊息的結尾加上 cache point。GPT 等其他模型也可能自行回報快取讀取或寫入。使用量面板的 **輸入 token** 分成 **輸入**（未快取）、**快取讀取**、**快取寫入**三欄，相加就是總輸入，狀態列顯示的是這個總數。快取讀取與寫入分別計價。快取單價來自公開價格表或 模型卡（GPT 的快取寫入用 30 分鐘的單價）；如果價格是用舊版下載的，請再按一次 **更新價格**。模型有快取 token 但沒有快取單價時，費用欄會顯示 **沒有快取價格**，該模型的費用不計入總計。
 
 狀態列會顯示本期輸入／輸出 token；點選 token 數可開啟使用量面板。面板也可更新價格、開啟自訂價格設定和重設使用量。
 
@@ -166,9 +168,13 @@ Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference 
 
 此 extension 不會將使用狀況、診斷紀錄或分析資料傳送給作者。使用量統計儲存在 VS Code 本機，診斷紀錄可在本機查看以協助排查問題。Chat 內容則依下節說明傳送到 Amazon Bedrock。Extension 會發出以下網路請求：
 
-1. 透過你的 AWS profile 連線至所選 region 的 Amazon Bedrock（載入模型清單、串流對話）。
+1. 透過你的 AWS profile 連線至所選 region 的 Amazon Bedrock（載入模型清單、串流對話）。擴充功能使用 SDK 預設的 Bedrock HTTPS 端點，忽略 AWS 設定檔與環境變數中的 Bedrock 端點覆寫。
 2. 你按下「更新價格」時，向 AWS 公開價格檔網址送出 HTTPS GET；請求不含帳號資訊或 AWS 憑證。
-3. 向 AWS 公開文件（docs.aws.amazon.com）的 model card 頁面送出 HTTPS GET，讀取 context window、最大輸出 token 數與價格：模型清單出現內建資料沒有的模型時在背景讀取（快取 7 天），按下「更新價格」時則重新讀取所有 model card。請求不含帳號資訊或 AWS 憑證。
+3. 向 AWS 公開文件（docs.aws.amazon.com）的模型卡頁面送出 HTTPS GET，讀取 context window、最大輸出 token 數與價格：模型清單出現內建資料沒有的模型時在背景讀取（快取 7 天），按下「更新價格」時則重新讀取所有模型卡。請求不含帳號資訊或 AWS 憑證。
+
+公開下載只會跟隨同一 HTTPS 來源的重新導向。大小上限在解壓縮前後皆適用：價格檔為 64 MiB，每份模型卡或索引為 8 MiB。
+
+設定 `amazonBedrockProvider.proxyUrl` 後，只有此擴充功能會在上述請求使用該 `http://` 或 `https://` proxy，且不會讀取 `HTTP_PROXY` 或 `HTTPS_PROXY` 環境變數。Proxy 網址不支援內嵌憑證。HTTPS proxy 與目的端的 TLS 憑證都必須受信任；即使 Node.js 環境停用憑證驗證，擴充功能仍不會略過 TLS 驗證。
 
 你按下登入按鈕時，extension 會在本機啟動 AWS CLI 的 `aws sso login`，AWS CLI 會打開瀏覽器讓你完成登入（例如選擇帳號、核准存取）；extension 不會在背景自動登入。
 
@@ -176,7 +182,8 @@ VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `tele
 
 ### AWS 憑證
 
-- 只使用你指定的 AWS named profile，不接受 API key，也不能直接輸入 access key。
+- Bedrock 請求一律以你指定的 AWS named profile 進行 SigV4 簽署，不接受 API key（包括 `AWS_BEARER_TOKEN_BEDROCK`），也不能直接輸入 access key。
+- 若所選 profile 使用 `credential_process`，AWS SDK 可能在載入模型清單時執行該 profile 設定的本機指令，不必等你選取 **登入**。請選擇設定與憑證指令都可信任的 profile。
 - AWS 憑證由 AWS SDK 在每次請求時透過 profile 取得。Extension 不會把 access key、secret key、session token 或 SSO token 存進 VS Code 設定、`globalState` 或紀錄。
 - SSO 登入由 AWS CLI 處理。AWS SDK 會讀取 `~/.aws/config` 與 `~/.aws/credentials` 來找到 profile；SSO token 快要過期時，也可能會和 AWS CLI 一樣更新 `~/.aws/sso/cache/` 中的 token。Extension 不會修改其他 AWS 檔案。
 
@@ -189,13 +196,14 @@ VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `tele
 
 ### 本機儲存
 
-- 只在 VS Code `globalState` 儲存使用量統計（profile 名稱、model ID、token 數與請求數）、每個模型的 thinking 設定、下載的價格表，以及從 AWS model card 讀取的 token 上限與價格。這些資料不會同步到其他裝置。使用量統計可從使用量面板重設，thinking 設定可用「設定 thinking effort」指令重設為 Default；下載的價格表會在你按下「更新價格」時被新的價格表取代。
+- Default Profile 的擴充功能 `globalStorage` 目錄中，會以共用檔案儲存使用量統計（profile 名稱、model ID、token 數與請求數）。只有可存取同一份共用本機儲存的 Host 會累計到此檔案，總計仍依 AWS profile 分組；排程重設會自動更新狀態列和已開啟的使用量面板。
+- VS Code `globalState` 儲存各模型的 thinking 設定、下載的價格表，以及從 AWS 模型卡讀取的 token 上限與價格。這些資料不會同步到其他裝置。thinking 設定可用 **設定 thinking effort** 指令重設為 Default；按下 **更新價格** 時會取代下載的價格表。
 - Extension 不會將 Chat 對話內容寫入本機儲存或紀錄。
 
 ### 紀錄
 
 - **顯示紀錄** 只記錄 profile 名稱、region、model ID、訊息數量、tool 名稱與錯誤碼等診斷資訊，不記錄對話內容。錯誤訊息中的 AWS principal ARN 與 email 會先遮蔽。
-- 紀錄會包含 AWS CLI 登入輸出，其中網址參數、Start URL 中的組織名稱與電子郵件地址會換成 `[redacted]`。分享紀錄前仍請檢查是否有個人識別資料。登入時瀏覽器沒有開啟的話，請在終端機執行 `aws sso login --profile <profile>`。
+- 擴充功能會先遮蔽網址參數、Start URL 中的組織名稱、電子郵件地址與一次性裝置授權碼，再記錄 AWS CLI 登入輸出。分享紀錄前仍請檢查是否有個人識別資料。登入時瀏覽器沒有開啟的話，請在終端機執行 `aws sso login --profile <profile>`。
 
 ### 開放原始碼
 
@@ -207,6 +215,7 @@ VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `tele
 - **缺少模型清單權限**：請管理員授予 `bedrock:ListInferenceProfiles`。
 - **模型呼叫遭拒**：檢查 profile 是否有 `bedrock:InvokeModelWithResponseStream`，並確認模型在所選 region／inference scope 可用；Marketplace 模型也可能需要訂閱權限。
 - **SSO 登入失效**：按 Bedrock 登入按鈕，或執行 `aws sso login --profile <profile>`，再重新送出失敗的 Chat 請求。
+- **未使用設定的網路路徑**：確認 `amazonBedrockProvider.proxyUrl` 是不含內嵌憑證的 `http://` 或 `https://` 網址。此擴充功能不會讀取 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 - **完整診斷**：使用命令面板的 **顯示紀錄**；分享前請遮蔽個人資料與驗證資訊。
 
 ## 開發
@@ -223,6 +232,6 @@ VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `tele
 
 本專案採 MIT 授權，詳見 [LICENSE](LICENSE)。隨附相依套件的授權與版權聲明見 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
-本專案只由作者一人維護。歡迎 fork 後做成你自己的專案，只要註明出處是本專案，並依 MIT 授權保留版權與授權聲明即可。
+本專案只由作者一人維護，且不接受外部 pull request。歡迎回報 issue，也歡迎依 MIT 授權 fork 後建立自己的專案，但仍須註明本專案為來源，並保留所需的著作權與授權聲明。
 
 Amazon Bedrock 與 AWS 為 Amazon.com, Inc. 或其關係企業的商標。本專案由第三方獨立開發，與 Amazon.com, Inc. 或 AWS 無隸屬關係，也未獲其背書或贊助。

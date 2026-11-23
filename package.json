@@ -2,7 +2,7 @@
   "name": "chat-model-provider-for-amazon-bedrock",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "publisher": "omoshiRoyQ",
   "icon": "icon.png",
   "license": "MIT",
@@ -264,6 +264,13 @@
             ]
           },
           "markdownDescription": "%config.customPricing.description%"
+        },
+        "amazonBedrockProvider.proxyUrl": {
+          "type": "string",
+          "scope": "machine",
+          "default": "",
+          "order": 9,
+          "markdownDescription": "%config.proxyUrl.description%"
         }
       }
     }
@@ -288,10 +295,10 @@
   "devDependencies": {
     "@types/node": "22.20.4",
     "@types/vscode": "1.106.1",
-    "@vscode/vsce": "4.0.0",
+    "@vscode/vsce": "4.1.1",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
-    "vitest": "5.0.5"
+    "vitest": "5.1.1"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1156.0",

@@ -82,6 +82,13 @@ describe('toConverseMessages', () => {
         expect(log.warn).not.toHaveBeenCalled();
     });
 
+    it('usage DataPart 是內部中繼資料，略過且不寫 warning', () => {
+        const log = makeLog();
+        const usage = vscode.LanguageModelDataPart.json({ prompt_tokens: 10, completion_tokens: 5 }, 'usage');
+        const messages = toConverseMessages([user(text('hi'), usage), assistant(usage)], log, true);
+        expect(messages).toEqual([{ role: 'user', content: [{ text: 'hi' }] }]);
+        expect(log.warn).not.toHaveBeenCalled();
+    });
     it('stateful_marker 與未知類型並存時，warning 只列未知類型', () => {
         const log = makeLog();
         toConverseMessages(

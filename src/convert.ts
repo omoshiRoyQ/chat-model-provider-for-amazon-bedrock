@@ -150,7 +150,7 @@ export function toConverseMessages(
             const block = toContentBlock(part);
             if (block) {
                 content.push(block);
-            } else if (block === undefined && !isStatefulMarker(part)) {
+            } else if (block === undefined && !isInternalMetadataPart(part)) {
                 const kind = describePart(part);
                 skipped.set(kind, (skipped.get(kind) ?? 0) + 1);
             }
@@ -344,9 +344,13 @@ function toToolResultContent(content: readonly unknown[]): ToolResultContentBloc
     return blocks.length > 0 ? blocks : [{ text: '(no output)' }];
 }
 
-/** Copilot attaches one stateful_marker per earlier message on every request; it is expected noise, so it is not logged. */
-function isStatefulMarker(part: unknown): boolean {
-    return part instanceof vscode.LanguageModelDataPart && part.mimeType.toLowerCase() === 'stateful_marker';
+/** Copilot-internal metadata is expected noise, so it is not sent to the model or logged. */
+function isInternalMetadataPart(part: unknown): boolean {
+    if (!(part instanceof vscode.LanguageModelDataPart)) {
+        return false;
+    }
+    const mime = part.mimeType.toLowerCase();
+    return mime === 'stateful_marker' || mime === 'usage';
 }
 
 function describePart(part: unknown): string {

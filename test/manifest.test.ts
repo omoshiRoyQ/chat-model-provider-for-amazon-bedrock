@@ -24,7 +24,7 @@ describe('extension manifest and localization contract', () => {
     });
 
     it('orders provider settings exactly as specified for the Settings UI', () => {
-        const manifest = readJson<{ contributes: { configuration: { properties: Record<string, { order?: number }> } } }>('package.json');
+        const manifest = readJson<{ contributes: { configuration: { properties: Record<string, { order?: number; scope?: string; default?: unknown; type?: string }> } } }>('package.json');
         const properties = manifest.contributes.configuration.properties;
         const expected = [
             'amazonBedrockProvider.profile',
@@ -35,6 +35,7 @@ describe('extension manifest and localization contract', () => {
             'amazonBedrockProvider.usageResetDay',
             'amazonBedrockProvider.usageResetHour',
             'amazonBedrockProvider.customPricing',
+            'amazonBedrockProvider.proxyUrl',
         ];
         const actual = Object.entries(properties)
             .filter(([key]) => key.startsWith('amazonBedrockProvider.'))
@@ -42,7 +43,13 @@ describe('extension manifest and localization contract', () => {
             .map(([key]) => key);
 
         expect(actual).toEqual(expected);
-        expect(expected.map((key) => properties[key]?.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+        expect(expected.map((key) => properties[key]?.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        expect(properties['amazonBedrockProvider.proxyUrl']).toMatchObject({
+            type: 'string',
+            scope: 'machine',
+            default: '',
+            order: 9,
+        });
     });
 
     it('keeps all user-facing commands in the provider category with stable IDs', () => {

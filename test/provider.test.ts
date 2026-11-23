@@ -10,6 +10,7 @@ import type { BedrockSettings } from '../src/settings';
 
 const mocks = vi.hoisted(() => ({
     stream: vi.fn(),
+    disposeNative: vi.fn(),
     readSettings: vi.fn(),
     fetchModelSources: vi.fn(),
 }));
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/native', () => ({
     NativeConverseClient: class {
         stream = mocks.stream;
+        dispose = mocks.disposeNative;
         constructor(_log: unknown) { }
     },
 }));
@@ -38,6 +40,7 @@ const settings = (profile: string): BedrockSettings => ({
     usageResetDay: 1,
     usageResetHour: 0,
     customPricing: {},
+    proxyUrl: '',
 });
 
 /** Expected behavior comes from the user's profile-attribution rule: usage is attributed to the profile active when the request starts. */
@@ -81,6 +84,87 @@ describe('AmazonBedrockProvider usage attribution', () => {
     });
 });
 
+/** The VS Code usage DataPart schema is reported with Bedrock prompt-cache token totals. */
+describe('AmazonBedrockProvider usage DataPart', () => {
+    const createProvider = (onUsage: ProviderHooks['onUsage']) => {
+        mocks.readSettings.mockReturnValue(settings('dev'));
+        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as vscode.LogOutputChannel;
+        return new AmazonBedrockProvider(log, { show: vi.fn(), hide: vi.fn() } as unknown as SignInStatusBar, {} as SsoSignIn, {
+            thinkingEffort: () => 'default',
+            onUsage,
+        }, {} as ModelCardStore);
+    };
+    const model = {
+        id: 'us.anthropic.test-model',
+        name: 'Test Model',
+        maxOutputTokens: 4_096,
+        capabilities: { imageInput: false },
+    } as vscode.LanguageModelChatInformation;
+
+    it('reports normalized usage without Copilot-specific fields', async () => {
+        const usage = { inputTokens: 100, cacheReadTokens: 400, cacheWriteTokens: 500, outputTokens: 50 };
+        mocks.stream.mockReset().mockResolvedValue(usage);
+        const onUsage = vi.fn();
+        const provider = createProvider(onUsage);
+        const report = vi.fn();
+
+        try {
+            await provider.provideLanguageModelChatResponse(
+                model,
+                [],
+                { tools: undefined, toolMode: vscode.LanguageModelChatToolMode.Auto },
+                { report },
+                { isCancellationRequested: false } as vscode.CancellationToken,
+            );
+
+            const part = report.mock.calls.map((call) => call[0]).find((value) => value instanceof vscode.LanguageModelDataPart) as vscode.LanguageModelDataPart | undefined;
+            expect(part).toBeDefined();
+            if (!part) {
+                throw new Error('Expected usage DataPart');
+            }
+            expect(part.mimeType).toBe('usage');
+            const decoded = JSON.parse(new TextDecoder().decode(part.data));
+            expect(decoded).toEqual({
+                prompt_tokens: 1000,
+                completion_tokens: 50,
+                total_tokens: 1050,
+                prompt_tokens_details: { cached_tokens: 400 },
+            });
+            expect(decoded.copilotUsage).toBeUndefined();
+            expect(decoded.totalNanoAiu).toBeUndefined();
+            expect(onUsage).toHaveBeenCalledWith('dev', undefined, model.id, model.name, usage);
+        } finally {
+            provider.dispose();
+        }
+    });
+
+    it('does not report or record usage after cancellation', async () => {
+        const usage = { inputTokens: 100, cacheReadTokens: 400, cacheWriteTokens: 500, outputTokens: 50 };
+        let finishRequest!: (value: typeof usage) => void;
+        mocks.stream.mockReset().mockReturnValue(new Promise((resolve) => {
+            finishRequest = resolve;
+        }));
+        const onUsage = vi.fn();
+        const provider = createProvider(onUsage);
+        const report = vi.fn();
+        const token = { isCancellationRequested: false } as vscode.CancellationToken;
+        const request = provider.provideLanguageModelChatResponse(
+            model,
+            [],
+            { tools: undefined, toolMode: vscode.LanguageModelChatToolMode.Auto },
+            { report },
+            token,
+        );
+
+        Object.assign(token, { isCancellationRequested: true });
+        finishRequest(usage);
+        await request;
+
+        expect(report).not.toHaveBeenCalled();
+        expect(onUsage).not.toHaveBeenCalled();
+        provider.dispose();
+    });
+});
 /** Expected behavior comes from the user's report: after the SSO token expires mid-session, the sign-in button must stay until a real AWS call succeeds. */
 describe('AmazonBedrockProvider sign-in button', () => {
     it('stays visible when VS Code re-queries a cached model list after a credential failure', async () => {
@@ -282,6 +366,88 @@ describe('AmazonBedrockProvider output token limit', () => {
             expect(mocks.stream.mock.calls[0][0].maxTokens).toBeUndefined();
         } finally {
             provider.dispose();
+        }
+    });
+});
+
+/** Limits come from AWS model cards accessed 2026-11-19; GPT-6.2 thinking was verified with ConverseStream on 2026-11-20. */
+describe('AmazonBedrockProvider GPT-6.2 model information', () => {
+    const sol = 'openai.gpt-6.2-sol';
+    const log = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) as unknown as vscode.LogOutputChannel;
+    const signInBar = { show: vi.fn(), hide: vi.fn() } as unknown as SignInStatusBar;
+    const configuration = (presetValue?: unknown) => vi.spyOn(vscode.workspace, 'getConfiguration').mockImplementation(() => ({
+        get: () => undefined,
+        inspect: (key: string) => ({ key, globalValue: presetValue }),
+    }) as unknown as vscode.WorkspaceConfiguration);
+
+    it('reports sourced limits and expands a GPT-6.2 Sol model preset', async () => {
+        mocks.readSettings.mockReturnValue(settings('dev'));
+        mocks.fetchModelSources.mockReset().mockResolvedValue({
+            region: 'us-west-2',
+            foundationsDenied: true,
+            foundations: [],
+            profiles: [{ id: `us.${sol}`, name: 'US Sol', active: true }],
+        });
+        configuration([{ id: 'sol-low', modelId: sol, route: 'Geo', effort: 'low' }]);
+        const provider = new AmazonBedrockProvider(
+            log(), signInBar, {} as SsoSignIn,
+            { thinkingEffort: () => 'default', onUsage: vi.fn() },
+            { limits: () => new Map(), needsRefresh: () => false } as unknown as ModelCardStore,
+        );
+
+        try {
+            const models = await provider.provideLanguageModelChatInformation({ silent: true }, {} as vscode.CancellationToken);
+            expect(models.find((model) => model.id === `us.${sol}`)).toMatchObject({
+                maxInputTokens: 922_000,
+                maxOutputTokens: 128_000,
+            });
+            expect(models.find((model) => model.id === 'bedrock-preset:sol-low')).toMatchObject({
+                family: sol,
+                maxInputTokens: 922_000,
+                maxOutputTokens: 128_000,
+            });
+        } finally {
+            provider.dispose();
+            vi.restoreAllMocks();
+        }
+    });
+
+    it('republishes refreshed card limits immediately after clearing the model-list cache', async () => {
+        const cardModel = 'openai.gpt-card-refresh';
+        let cardLimits = new Map<string, { card: string; contextWindow?: number; maxOutputTokens?: number }>();
+        mocks.readSettings.mockReturnValue(settings('dev'));
+        mocks.fetchModelSources.mockReset().mockResolvedValue({
+            region: 'us-west-2',
+            foundationsDenied: true,
+            foundations: [],
+            profiles: [{ id: `us.${cardModel}`, name: 'US Card Refresh', active: true }],
+        });
+        configuration();
+        const provider = new AmazonBedrockProvider(
+            log(), signInBar, {} as SsoSignIn,
+            { thinkingEffort: () => 'default', onUsage: vi.fn() },
+            { limits: () => cardLimits, needsRefresh: () => false } as unknown as ModelCardStore,
+        );
+        const changed = vi.spyOn(vscode.EventEmitter.prototype, 'fire');
+
+        try {
+            const before = await provider.provideLanguageModelChatInformation({ silent: true }, {} as vscode.CancellationToken);
+            expect(before[0]).toMatchObject({ maxInputTokens: 123_904, maxOutputTokens: 4_096 });
+
+            cardLimits = new Map([[cardModel, {
+                card: 'forced-refresh model card',
+                contextWindow: 1_050_000,
+                maxOutputTokens: 128_000,
+            }]]);
+            provider.refreshModelList();
+            const after = await provider.provideLanguageModelChatInformation({ silent: true }, {} as vscode.CancellationToken);
+
+            expect(changed).toHaveBeenCalledOnce();
+            expect(after[0]).toMatchObject({ maxInputTokens: 922_000, maxOutputTokens: 128_000 });
+            expect(mocks.fetchModelSources).toHaveBeenCalledOnce();
+        } finally {
+            provider.dispose();
+            vi.restoreAllMocks();
         }
     });
 });

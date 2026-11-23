@@ -1,6 +1,13 @@
 # 變更紀錄
 
-[EN](CHANGELOG.md) | [JP](CHANGELOG.ja.md)
+[EN](CHANGELOG.md) | [JA](CHANGELOG.ja.md)
+
+## 2.1.0（2026-11-23）
+
+- 新增明確的 `amazonBedrockProvider.proxyUrl` 設定，可供 Bedrock 及 AWS 公開價格表／模型卡下載使用。擴充功能不再讀取一般 HTTP proxy 環境變數或已設定的 Bedrock 自訂端點，並會持續驗證 proxy 與目的端的 TLS 憑證。
+- Chat Session Info 現在會顯示 Bedrock token 使用量，且不會計入 Copilot credit。可使用同一份本機使用量儲存的 Host 會安全協調寫入；儲存或鎖無法使用時會略過該筆本機記錄，因此估算可能偏低，但不影響 Chat 回應或 AWS 帳單。
+- 新增 GPT-6.1 Terra、GPT-6.2 Astra 與 GPT-6.2 Sol，並套用公開的 context window、最大輸出與 thinking 支援資料。Claude Sonnet 4.5 不再收到不支援的 prompt cache point。
+- AWS 公開價格表與模型卡下載現在有時間及大小上限，只跟隨原始 HTTPS 來源內的重新導向，取消串流時也會關閉底層連線。工具參數解析失敗及 SSO 紀錄會持續排除對話內容與敏感授權值。
 
 ## 2.0.1（2026-10-26）
 

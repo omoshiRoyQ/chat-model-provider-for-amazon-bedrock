@@ -81,7 +81,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
    copyright notice that is included in or attached to the work
    (an example is provided in the Appendix below).
 
-   "Derivative Works" shall mean any work of authorship, whether in Source or Object
+   "Derivative Works" shall mean any work, whether in Source or Object
    form, that is based on (or derived from) the Work and for which the
    editorial revisions, annotations, elaborations, or other modifications
    represent, as a whole, an original work of authorship. For the purposes

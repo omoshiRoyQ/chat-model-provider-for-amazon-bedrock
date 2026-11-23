@@ -1,5 +1,6 @@
 import type * as vscode from 'vscode';
 import type { TokenUsage } from './native';
+import { migrationMarkerKey, type SharedUsageBacking } from './usageStorage';
 
 /** Token and request totals for one model in the current period. */
 export interface ModelUsage {
@@ -125,13 +126,19 @@ export function addUsage(period: UsagePeriod, invokeId: string, info: ModelInfo,
 }
 
 /**
- * Stores current-period totals per profile in VS Code globalState (persists across restarts but does not sync to other devices).
- * When reading, treat data as a new period and discard the old totals if the reset point has passed.
+ * Stores current-period totals per AWS profile in shared storage and only reads `globalState` for legacy migration.
  */
-export class UsageStore {
+export class UsageStore implements vscode.Disposable {
     private readonly queues = new Map<string, Promise<void>>();
 
-    constructor(private readonly memento: vscode.Memento) { }
+    constructor(
+        private readonly memento: vscode.Memento,
+        private readonly sharedBacking?: SharedUsageBacking,
+    ) { }
+
+    dispose(): void {
+        this.sharedBacking?.dispose();
+    }
 
     private key(profile: string): string {
         return `usage:${profile}`;
@@ -150,8 +157,7 @@ export class UsageStore {
         return current;
     }
 
-    get(profile: string, resetDay: number, resetHour: number, now = new Date()): UsagePeriod {
-        const stored = this.memento.get<UsagePeriod>(this.key(profile));
+    private normalizePeriod(stored: UsagePeriod | undefined, resetDay: number, resetHour: number, now: Date): UsagePeriod {
         if (!stored) {
             return {
                 periodStart: currentPeriodStart(now, resetDay, resetHour).toISOString(),
@@ -168,28 +174,64 @@ export class UsageStore {
         return resetIfDue(stored, now);
     }
 
-    /** Saves the next reset point for a changed schedule without clearing current totals. */
-    configureResetSchedule(profile: string, resetDay: number, resetHour: number, now = new Date()): Promise<void> {
-        const key = this.key(profile);
-        return this.serialize(key, () => this.applyResetSchedule(key, resetDay, resetHour, now));
+    private migrateLegacyCandidate(profile: string, resetDay: number, resetHour: number, now: Date): UsagePeriod | undefined {
+        if (this.memento.get<boolean>(migrationMarkerKey(profile))) {
+            return undefined;
+        }
+        const legacy = this.memento.get<UsagePeriod>(this.key(profile));
+        if (!legacy) {
+            return undefined;
+        }
+        const normalized = this.normalizePeriod(legacy, resetDay, resetHour, now);
+        return Object.keys(normalized.models).length > 0 ? normalized : undefined;
     }
 
-    private async applyResetSchedule(key: string, resetDay: number, resetHour: number, now: Date): Promise<void> {
-        const stored = this.memento.get<UsagePeriod>(key);
+    get(profile: string, resetDay: number, resetHour: number, now = new Date()): UsagePeriod {
+        const shared = this.sharedBacking?.readProfile(profile);
+        const legacy = this.sharedBacking && !shared ? this.migrateLegacyCandidate(profile, resetDay, resetHour, now) : undefined;
+        return this.normalizePeriod(shared ?? legacy, resetDay, resetHour, now);
+    }
+
+    private applyScheduleToPeriod(stored: UsagePeriod | undefined, resetDay: number, resetHour: number, now: Date): UsagePeriod | undefined {
         if (!stored) {
-            return;
+            return undefined;
         }
         const current = resetIfDue(stored, now);
         const schedule = current.resetSchedule;
         if (schedule?.day === resetDay && schedule.hour === resetHour) {
-            if (current !== stored) {
-                await this.memento.update(key, current);
-            }
-            return;
+            return current;
         }
-        await this.memento.update(key, {
+        return {
             ...current,
             resetSchedule: makeResetSchedule(now, resetDay, resetHour),
+        };
+    }
+
+    /** Saves the next reset point for a changed schedule without clearing current totals, and migrates legacy globalState if needed. */
+    configureResetSchedule(profile: string, resetDay: number, resetHour: number, now = new Date()): Promise<void> {
+        const key = this.key(profile);
+        return this.serialize(key, async () => {
+            const backing = this.sharedBacking;
+            if (!backing) return;
+            const legacyCandidate = this.migrateLegacyCandidate(profile, resetDay, resetHour, now);
+            const existing = backing.readProfile(profile);
+            if (!existing && !legacyCandidate) {
+                if (!this.memento.get<boolean>(migrationMarkerKey(profile))) {
+                    await this.memento.update(migrationMarkerKey(profile), true);
+                }
+                return;
+            }
+            let migrated = false;
+            await backing.writeProfile(profile, (current) => {
+                const seed = current ?? legacyCandidate;
+                if (!current && legacyCandidate) {
+                    migrated = true;
+                }
+                return this.applyScheduleToPeriod(seed, resetDay, resetHour, now) ?? this.normalizePeriod(undefined, resetDay, resetHour, now);
+            });
+            if (migrated || !this.memento.get<boolean>(migrationMarkerKey(profile))) {
+                await this.memento.update(migrationMarkerKey(profile), true);
+            }
         });
     }
 
@@ -205,9 +247,18 @@ export class UsageStore {
     ): Promise<void> {
         const key = this.key(profile);
         return this.serialize(key, async () => {
-            await this.applyResetSchedule(key, resetDay, resetHour, now);
-            const period = this.get(profile, resetDay, resetHour, now);
-            await this.memento.update(key, addUsage(period, invokeId, info, usage, longContext));
+            const backing = this.sharedBacking;
+            if (!backing) return;
+            const legacyCandidate = this.migrateLegacyCandidate(profile, resetDay, resetHour, now);
+            await backing.writeProfile(profile, (current) => {
+                const seeded = current ?? legacyCandidate;
+                const scheduled = this.applyScheduleToPeriod(seeded, resetDay, resetHour, now);
+                const basePeriod = this.normalizePeriod(scheduled, resetDay, resetHour, now);
+                return addUsage(basePeriod, invokeId, info, usage, longContext);
+            });
+            if (!this.memento.get<boolean>(migrationMarkerKey(profile))) {
+                await this.memento.update(migrationMarkerKey(profile), true);
+            }
         });
     }
 
@@ -215,9 +266,16 @@ export class UsageStore {
     reset(profile: string, resetDay: number, resetHour: number, now = new Date()): Promise<void> {
         const key = this.key(profile);
         return this.serialize(key, async () => {
-            await this.applyResetSchedule(key, resetDay, resetHour, now);
-            const period = this.get(profile, resetDay, resetHour, now);
-            await this.memento.update(key, { ...period, manualResetAt: now.toISOString(), models: {} });
+            const backing = this.sharedBacking;
+            if (!backing) throw new Error('Shared usage storage is unavailable.');
+            await backing.writeProfile(profile, (current) => {
+                const scheduled = this.applyScheduleToPeriod(current, resetDay, resetHour, now);
+                const period = this.normalizePeriod(scheduled, resetDay, resetHour, now);
+                return { ...period, manualResetAt: now.toISOString(), models: {} };
+            });
+            if (!this.memento.get<boolean>(migrationMarkerKey(profile))) {
+                await this.memento.update(migrationMarkerKey(profile), true);
+            }
         });
     }
 }

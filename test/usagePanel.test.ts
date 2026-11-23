@@ -1,10 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsagePanel, renderCost } from '../src/usagePanel';
 import type { UsageRow } from '../src/usageView';
 
+const zhTwBundle = JSON.parse(readFileSync('l10n/bundle.l10n.zh-tw.json', 'utf8')) as Record<string, string>;
+
 const mocks = vi.hoisted(() => ({
     createWebviewPanel: vi.fn(),
     language: 'en',
+    bundle: undefined as Record<string, string> | undefined,
     panel: undefined as undefined | {
         dispose: ReturnType<typeof vi.fn>;
         onDidDispose: ReturnType<typeof vi.fn>;
@@ -16,7 +20,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('vscode', () => ({
     ViewColumn: { Active: 1 },
     env: { get language() { return mocks.language; } },
-    l10n: { t: (message: string, ...args: unknown[]) => message.replace(/\{(\d+)\}/g, (match, index: string) => args[Number(index)] === undefined ? match : String(args[Number(index)])) },
+    l10n: {
+        t: (message: string, ...args: unknown[]) => {
+            const template = mocks.bundle?.[message] ?? message;
+            return template.replace(/\{(\d+)\}/g, (match, index: string) => args[Number(index)] === undefined ? match : String(args[Number(index)]));
+        },
+    },
     window: { createWebviewPanel: mocks.createWebviewPanel },
 }));
 
@@ -49,6 +58,7 @@ const view = (rows: UsageRow[] = []): Parameters<UsagePanel['show']>[0] => ({
 
 beforeEach(() => {
     mocks.language = 'en';
+    mocks.bundle = undefined;
     mocks.createWebviewPanel.mockReset();
     mocks.panel = undefined;
 });
@@ -69,6 +79,27 @@ describe('renderCost', () => {
         };
 
         expect(renderCost(row)).toBe('$0.1960<div class="sub">price table</div>');
+    });
+
+    it('renders localized zh-tw price source labels ("模型卡", "價格表", "自訂") when l10n bundle is active', () => {
+        mocks.language = 'zh-tw';
+        mocks.bundle = zhTwBundle;
+        const makeRow = (priceSource: UsageRow['priceSource']): UsageRow => ({
+            invokeId: 'global.openai.gpt-6.2-sol',
+            name: 'GPT-6.2 Sol',
+            route: 'Global',
+            requests: 1,
+            inputTokens: 1_000,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 200,
+            cost: 0.004,
+            priceSource,
+        });
+
+        expect(renderCost(makeRow('modelCard'))).toBe('$0.0040<div class="sub">模型卡</div>');
+        expect(renderCost(makeRow('table'))).toBe('$0.0040<div class="sub">價格表</div>');
+        expect(renderCost(makeRow('custom'))).toBe('$0.0040<div class="sub">自訂</div>');
     });
 });
 

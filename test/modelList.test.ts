@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    constructorCalls: [] as unknown[],
     send: vi.fn(),
     destroy: vi.fn(),
     fromIni: vi.fn(),
@@ -8,6 +9,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@aws-sdk/client-bedrock', () => ({
     BedrockClient: class {
+        constructor(options: unknown) {
+            mocks.constructorCalls.push(options);
+        }
         config = { region: async () => 'us-west-2' };
         send = mocks.send;
         destroy = mocks.destroy;
@@ -25,6 +29,7 @@ import { fetchModelSources } from '../src/modelList';
 
 beforeEach(() => {
     vi.resetAllMocks();
+    mocks.constructorCalls.length = 0;
     mocks.fromIni.mockReturnValue({});
 });
 
@@ -107,5 +112,23 @@ describe('fetchModelSources', () => {
         await expect(fetchModelSources('dev-profile', 'us-west-2'))
             .rejects.toMatchObject({ name: 'AccessDeniedException', operation: 'ListInferenceProfiles', region: 'us-west-2' });
         expect(mocks.destroy).toHaveBeenCalledOnce();
+    });
+
+    it('passes an HTTP/1.1 requestHandler to BedrockClient and fromIni and rejects invalid proxyUrl before querying', async () => {
+        mocks.send
+            .mockResolvedValueOnce({ inferenceProfileSummaries: [] })
+            .mockResolvedValueOnce({ modelSummaries: [] });
+
+        await fetchModelSources('dev-profile', 'us-west-2', { proxyUrl: 'http://proxy.example:8080' });
+        const clientOptions = mocks.constructorCalls[0] as { requestHandler?: { metadata?: { handlerProtocol?: string } } };
+        expect(clientOptions.requestHandler?.metadata).toEqual({ handlerProtocol: 'http/1.1' });
+        expect(mocks.fromIni).toHaveBeenCalledWith({
+            profile: 'dev-profile',
+            clientConfig: { requestHandler: clientOptions.requestHandler, ignoreConfiguredEndpointUrls: true },
+            roleAssumerWithWebIdentity: expect.any(Function),
+        });
+
+        await expect(fetchModelSources('dev-profile', 'us-west-2', { proxyUrl: 'http://user:secret@proxy.example:8080' }))
+            .rejects.toThrow('embedded credentials are not supported');
     });
 });

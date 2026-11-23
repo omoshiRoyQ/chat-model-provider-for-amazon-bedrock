@@ -19,5 +19,6 @@
     "config.inferenceScope.global": "全球 profile。請求可能在全世界任何 AWS 區域處理。模型沒有 global profile 時，改用地理區 profile。",
     "config.usageResetDay.description": "累計 token 每月重設的日期（1～31）。當月沒有這一天時，改在當月最後一天重設。",
     "config.usageResetHour.description": "累計 token 重設的時間（UTC，0～23 點）。",
-    "config.customPricing.description": "自訂單價，單位是每 1M token 的美元，以 model ID 為 key。自訂單價優先於下載的價格（AWS 公開價格表，其次是 AWS model card 上的價格表）。`cacheRead` 與 `cacheWrite` 是選填的 prompt cache 單價；沒有填寫時，有讀取或寫入 prompt cache 的請求不會估算費用。自訂單價沒有長 context 分級，輸入超過模型長 context 門檻的請求不會估算費用。範例：`{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`"
+    "config.customPricing.description": "自訂單價，單位是每 1M token 的美元，以 model ID 為 key。自訂單價優先於下載的價格（AWS 公開價格表，其次是 AWS 模型卡上的價格表）。`cacheRead` 與 `cacheWrite` 是選填的 prompt cache 單價；沒有填寫時，有讀取或寫入 prompt cache 的請求不會估算費用。自訂單價沒有長 context 分級，輸入超過模型長 context 門檻的請求不會估算費用。範例：`{ \"openai.gpt-6-astra\": { \"input\": 5, \"output\": 20 } }`",
+    "config.proxyUrl.description": "選填的 HTTP 或 HTTPS proxy 網址，僅供此擴充功能用於 Amazon Bedrock 請求及下載 AWS 公開價格表／模型卡，例如 `http://proxy.example:8080`。留空代表直接連線。不會讀取 `HTTP_PROXY`、`HTTPS_PROXY` 等環境變數，且不支援在網址內包含帳號與密碼。"
 }

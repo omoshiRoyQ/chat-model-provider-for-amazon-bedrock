@@ -100,6 +100,46 @@ describe('resolveModels', () => {
         expect(opus).toMatchObject({ contextWindow: 1_000_000, maxOutputTokens: 128_000, maxOutputSourced: true, thinking: 'adaptiveAlways', name: 'Claude Opus 5.5' });
     });
 
+    it.each(['openai.gpt-6.2-astra', 'openai.gpt-6.2-sol'])('uses the verified GPT-6.2 catalog limits and minimum versions for %s', (baseId) => {
+        // Limits: AWS model cards accessed 2026-11-19; thinking: ConverseStream probe on 2026-11-20 (us-west-2).
+        const result = resolveModels(
+            [profile(`us.${baseId}`)],
+            [foundation(baseId, baseId)],
+            'geo',
+            true,
+        ).models[0];
+        expect(result).toMatchObject({
+            contextWindow: 1_050_000,
+            maxOutputTokens: 128_000,
+            longContextThreshold: 272_000,
+            thinking: 'openaiNoNone',
+        });
+        for (const gpt of ['6', '6.2']) {
+            const policy = parseModelVisibility({ mode: 'selected', providers: ['openai'], minimumVersions: { gpt } }).value;
+            expect(modelVisibility(baseId, policy).visible).toBe(true);
+        }
+    });
+
+    it('uses the verified GPT-6.1 Terra catalog limits and accepts effort none', () => {
+        // Limits and long-context threshold: AWS model card accessed 2026-11-23; ConverseStream probe on 2026-11-23 (us-west-2, global profile) accepted effort=none.
+        const baseId = 'openai.gpt-6.1-terra';
+        const result = resolveModels([profile(`us.${baseId}`)], [foundation(baseId, baseId)], 'geo', true).models[0];
+        expect(result).toMatchObject({
+            contextWindow: 1_050_000,
+            maxOutputTokens: 128_000,
+            maxOutputSourced: true,
+            longContextThreshold: 272_000,
+            thinking: 'openai',
+        });
+    });
+
+    it('Claude Sonnet 4.5 does not claim prompt caching support', () => {
+        // Expected promptCache comes from the AWS prompt-caching support table checked by the model-card script on 2026-11-19.
+        const baseId = 'anthropic.claude-sonnet-4-5-20250929-v1:0';
+        const result = resolveModels([profile(`us.${baseId}`)], [foundation(baseId, 'Claude Sonnet 4.5')], 'geo', true).models[0];
+        expect(result.promptCache).toBe(false);
+    });
+
     it('模型卡寫明不支援 Native 的模型不列出（GPT - 5.4）', () => {
         const r = resolveModels(profiles, foundations, 'geo', true);
         expect(ids(r)).not.toContain('us.openai.gpt-5.4');

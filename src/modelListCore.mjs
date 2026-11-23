@@ -3,8 +3,8 @@ import {
     ListFoundationModelsCommand,
     ListInferenceProfilesCommand,
 } from '@aws-sdk/client-bedrock';
-import { fromIni } from '@aws-sdk/credential-providers';
 import operationErrorContext from './operationErrorContext.cjs';
+import { BEDROCK_CLIENT_SECURITY, createAwsRequestHandler, createNamedProfileCredentials } from './proxy.ts';
 
 const { withOperationContext } = operationErrorContext;
 
@@ -13,10 +13,13 @@ const { withOperationContext } = operationErrorContext;
  * Credentials are provided by `fromIni({ profile })`; no keys are stored.
  */
 export async function fetchModelSources(profile, region, options = {}) {
+    const requestHandler = createAwsRequestHandler(options.proxyUrl);
     const client = new BedrockClient({
+        ...BEDROCK_CLIENT_SECURITY,
         profile,
         region: region || undefined,
-        credentials: fromIni({ profile }),
+        requestHandler,
+        credentials: createNamedProfileCredentials(profile, requestHandler, () => client.config.region()),
     });
     try {
         let resolvedRegion;
@@ -76,5 +79,6 @@ export async function fetchModelSources(profile, region, options = {}) {
         };
     } finally {
         client.destroy();
+        requestHandler.destroy();
     }
 }

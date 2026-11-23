@@ -2,6 +2,13 @@
 
 [EN](CHANGELOG.md) | [TW](CHANGELOG.zh-tw.md)
 
+## 2.1.0（2026-11-23）
+
+- Bedrock と AWS 公開価格表／モデルカードのダウンロード用に、明示的な `amazonBedrockProvider.proxyUrl` 設定を追加しました。この extension は汎用の HTTP プロキシ環境変数や設定済みの Bedrock カスタムエンドポイントを読まなくなり、プロキシと接続先の TLS 証明書を引き続き検証します。
+- Chat Session Info に Bedrock の token 使用量を表示し、Copilot credit には加算しないようにしました。同じローカル使用量ストレージを利用できる Host は書き込みを安全に調整します。ストレージまたはロックを利用できない場合はそのローカル記録をスキップするため推定値が低くなることがありますが、Chat の応答や AWS の請求には影響しません。
+- GPT-6.1 Terra、GPT-6.2 Astra、GPT-6.2 Sol を、公開済みの context window、最大出力 token 数、thinking 対応データとともに追加しました。Claude Sonnet 4.5 には非対応の prompt cache point を送信しなくなりました。
+- AWS 公開価格表とモデルカードのダウンロードに時間とサイズの上限を設け、元の HTTPS オリジン内のリダイレクトだけをたどり、ストリームのキャンセル時に基底の接続を閉じます。tool 引数の解析失敗や SSO ログでも、Chat 内容と機密の認証値を引き続き除外します。
+
 ## 2.0.1（2026-10-26）
 
 - 同梱の AWS SDK を 3.1156.0 に更新しました。

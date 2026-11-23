@@ -3,7 +3,7 @@
  *
  * Token limits must have a source (AWS documentation or API response) cited here; never infer them from a model name.
  * ListInferenceProfiles and ListFoundationModels do not return token limits, so all values come from AWS model cards:
- * https://docs.aws.amazon.com/bedrock/latest/userguide/<card>.html (accessed 2026-10-09).
+ * https://docs.aws.amazon.com/bedrock/latest/userguide/<card>.html (accessed 2026-11-19).
  * The catalog is keyed by foundation model ID without an inference-profile prefix.
  * Models missing from the catalog use limits from model cards fetched at runtime (modelCardStore.ts), then conservative values.
  */
@@ -39,7 +39,7 @@ const K = 1_000;
 const M = 1_000_000;
 
 export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
-    // Anthropic: context, max output, and thinking formats come from each model card (accessed 2026-10-09).
+    // Anthropic: context, max output, and thinking formats come from each model card (accessed 2026-11-19).
     // promptCache follows the explicit prompt caching table in prompt-caching.html (Converse `messages` checkpoints; check-model-cards compares it).
     'anthropic.claude-3-haiku-20240307-v1:0': { card: 'model-card-anthropic-claude-3-haiku', contextWindow: 200 * K, maxOutputTokens: 4 * K, thinking: 'none' },
     'anthropic.claude-haiku-4-5-20251001-v1:0': { card: 'model-card-anthropic-claude-haiku-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
@@ -48,7 +48,7 @@ export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     // "prompts over 100,000 tokens" (all input tokens, including cache reads and writes), the only Claude model with a long-context tier.
     'anthropic.claude-haiku-5-5': { card: 'model-card-anthropic-claude-haiku-5-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true, longContextThreshold: 100 * K },
     'anthropic.claude-sonnet-4-20250514-v1:0': { card: 'model-card-anthropic-claude-sonnet-4', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
-    'anthropic.claude-sonnet-4-5-20250929-v1:0': { card: 'model-card-anthropic-claude-sonnet-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended', promptCache: true },
+    'anthropic.claude-sonnet-4-5-20250929-v1:0': { card: 'model-card-anthropic-claude-sonnet-4-5', contextWindow: 200 * K, maxOutputTokens: 64 * K, thinking: 'extended' },
     'anthropic.claude-sonnet-4-6': { card: 'model-card-anthropic-claude-sonnet-4-6', contextWindow: 1 * M, maxOutputTokens: 64 * K, thinking: 'adaptive', promptCache: true },
     'anthropic.claude-sonnet-5': { card: 'model-card-anthropic-claude-sonnet-5', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptive', promptCache: true },
     // Verified by the user on 2026-10-01: thinking cannot be turned off.
@@ -65,8 +65,8 @@ export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     'anthropic.claude-fable-5-1': { card: 'model-card-anthropic-claude-fable-5-1', contextWindow: 1 * M, maxOutputTokens: 128 * K, thinking: 'adaptiveAlways', promptCache: true },
     // No model card was found for Claude 3 Sonnet, so it is omitted from the catalog and uses conservative values with a log entry.
 
-    // OpenAI: limits come from each model card (rechecked 2026-10-04 with check-model-cards).
-    // longContextThreshold comes from each card's Pricing section ("more than 272K input tokens", checked 2026-10-04).
+    // OpenAI: limits come from each model card (rechecked 2026-11-19 with check-model-cards).
+    // longContextThreshold comes from each card's Pricing section ("more than 272K input tokens", checked 2026-11-19).
     'openai.gpt-5.4': { card: 'model-card-openai-gpt-54', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
     'openai.gpt-5.5': { card: 'model-card-openai-gpt-55', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', nativeUnsupported: true, longContextThreshold: 272_000 },
     'openai.gpt-5.6-luna': { card: 'model-card-openai-gpt-56-luna', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', longContextThreshold: 272_000 },
@@ -79,7 +79,12 @@ export const CATALOG: Readonly<Record<string, CatalogEntry>> = {
     'openai.gpt-6-sol': { card: 'model-card-openai-gpt-6-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
     // Verified 2026-10-04 with ConverseStream (us-west-2, us.openai.gpt-6.1-sol): baseline=ok, effort=low=ok, effort=none=ValidationException
     'openai.gpt-6.1-sol': { card: 'model-card-openai-gpt-6-1-sol', contextWindow: 1_000_000, maxOutputTokens: 131_072, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
-    // Verified 2026-10-01 with ConverseStream (us-west-2, bare model IDs): baseline, effort=low, and effort=none all succeeded.
+    // Verified 2026-11-23 with ConverseStream (us-west-2, global.openai.gpt-6.1-terra): baseline=ok, effort=low=ok, effort=none=ok.
+    // Limits and the 272K long-context threshold come from model-card-openai-gpt-6-1-terra (accessed 2026-11-23).
+    'openai.gpt-6.1-terra': { card: 'model-card-openai-gpt-6-1-terra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openai', longContextThreshold: 272_000 },
+    // Verified 2026-11-20 with ConverseStream (us-west-2, us.openai.gpt-6.2-astra and us.openai.gpt-6.2-sol): baseline=ok, effort=low=ok, effort=none=ValidationException.
+    'openai.gpt-6.2-astra': { card: 'model-card-openai-gpt-6-2-astra', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
+    'openai.gpt-6.2-sol': { card: 'model-card-openai-gpt-6-2-sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, thinking: 'openaiNoNone', longContextThreshold: 272_000 },
     'openai.gpt-oss-120b-1:0': { card: 'model-card-openai-gpt-oss-120b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
     'openai.gpt-oss-20b-1:0': { card: 'model-card-openai-gpt-oss-20b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },
     'openai.gpt-oss-safeguard-120b': { card: 'model-card-openai-gpt-oss-safeguard-120b', contextWindow: 128 * K, maxOutputTokens: 16 * K, thinking: 'openai' },

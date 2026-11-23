@@ -1,6 +1,23 @@
+import { spawn } from 'node:child_process';
+import { EventEmitter, once } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { redactSignInOutput, SsoSignIn } from '../src/signIn';
+
+vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
+vi.mock('vscode', async (importOriginal) => {
+    const vscode = await importOriginal<typeof import('vscode')>();
+    return {
+        ...vscode,
+        ProgressLocation: { Notification: 15 },
+        window: {
+            ...vscode.window,
+            withProgress: (_options: vscode.ProgressOptions, task: (progress: unknown, token: vscode.CancellationToken) => Promise<unknown>) =>
+                task(undefined, { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) }),
+        },
+    };
+});
 
 describe('SsoSignIn.run', () => {
     it('拒絕以 - 開頭的 profile 名稱，不啟動 aws', async () => {
@@ -8,6 +25,37 @@ describe('SsoSignIn.run', () => {
         await expect(new SsoSignIn(log).run('--endpoint-url=https://example.invalid')).resolves.toBe(false);
         expect(log.error).toHaveBeenCalledOnce();
         expect(log.info).not.toHaveBeenCalled();
+    });
+
+    it('redacts complete lines from both streams, even across chunks', async () => {
+        const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() });
+        vi.mocked(spawn).mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
+        const info = vi.fn();
+        const log = { info } as unknown as vscode.LogOutputChannel;
+        const result = new SsoSignIn(log).run('sample-profile');
+        const prefix = '[aws sso login] ';
+        const loggedLines = () => info.mock.calls.map(([message]) => message).filter((message) => message.startsWith(prefix));
+        // Use the AWS CLI output formats below with synthetic values.
+        const text = '臺かなe\u0301🙂';
+        const bytes = Buffer.from(text);
+        child.stdout.write('https://login.example/authorize?state=sample-');
+        child.stderr.write('ABCD-');
+        child.stdout.write('value\r');
+        expect(loggedLines()).toEqual([]);
+        const stdoutEnded = once(child.stdout, 'end');
+        const stderrEnded = once(child.stderr, 'end');
+        child.stdout.write(Buffer.concat([Buffer.from('\n\n'), bytes.subarray(0, bytes.length - 2)]));
+        child.stdout.end(bytes.subarray(bytes.length - 2));
+        child.stderr.end('1234');
+        await Promise.all([stdoutEnded, stderrEnded]);
+        child.emit('close', 0);
+
+        await expect(result).resolves.toBe(true);
+        expect(loggedLines().sort()).toEqual([
+            `${prefix}https://login.example/authorize?[redacted]`,
+            `${prefix}[code redacted]`,
+            `${prefix}${text}`,
+        ].sort());
     });
 });
 

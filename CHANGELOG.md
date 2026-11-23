@@ -1,6 +1,13 @@
 # Changelog
 
-[TW](CHANGELOG.zh-tw.md) | [JP](CHANGELOG.ja.md)
+[TW](CHANGELOG.zh-tw.md) | [JA](CHANGELOG.ja.md)
+
+## 2.1.0 (2026-11-23)
+
+- Added an explicit `amazonBedrockProvider.proxyUrl` setting for Bedrock and public AWS price/model-card downloads. The extension no longer reads generic HTTP proxy environment variables or configured Bedrock endpoint overrides, and it continues to verify TLS for the proxy and destination connections.
+- Chat Session Info now shows Bedrock token usage without adding to Copilot credit totals. Hosts that share the same local usage storage coordinate writes safely; when that storage or its lock is unavailable, the local usage record is skipped and estimated totals may be lower without affecting Chat responses or your AWS bill.
+- Added GPT-6.1 Terra, GPT-6.2 Astra, and GPT-6.2 Sol with their published context windows, output limits, and thinking support. Claude Sonnet 4.5 no longer receives unsupported prompt-cache points.
+- Public price and model-card downloads now have bounded time and size limits, follow redirects only within the original HTTPS origin, and stream cancellation closes the underlying connection. Tool-argument parse failures and SSO logs continue to omit chat content and sensitive authorization values.
 
 ## 2.0.1 (2026-10-26)
 

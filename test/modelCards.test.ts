@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { ModelCardStore } from '../src/modelCardStore';
 import { converseCacheModelIds, MODEL_CARD_INDEX_URL, modelCardNames, modelCardUrl, parseCardPricing, parseModelCard, parseTokenCount } from '../src/modelCards';
+import * as proxy from '../src/proxy';
 
 /**
  * Fixtures are excerpts of the markdown versions of AWS model cards and the user-guide index, fetched on 2026-10-01
@@ -425,19 +426,18 @@ describe('ModelCardStore', () => {
         [modelCardUrl('model-card-meta-llama-3-3-70b-instruct')]: LLAMA_33,
     };
     const stubFetch = (failing: string[] = []) => {
-        const fetchMock = vi.fn(async (url: string) => {
+        return vi.spyOn(proxy, 'fetchHttpsText').mockImplementation(async (url: string) => {
             const body = failing.includes(url) ? undefined : pages[url];
-            return body === undefined
-                ? { ok: false, status: 404, statusText: 'Not Found', text: async () => '' }
-                : { ok: true, status: 200, statusText: 'OK', text: async () => body };
+            if (body === undefined) {
+                throw new Error(`HTTP 404 Not Found (${url})`);
+            }
+            return body;
         });
-        vi.stubGlobal('fetch', fetchMock);
-        return fetchMock;
     };
     const LLAMA = 'meta.llama3-3-70b-instruct-v1:0';
 
     afterEach(() => {
-        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
     });
 
     it('fetches the index and cards, then answers from the cache', async () => {
@@ -502,8 +502,9 @@ describe('ModelCardStore', () => {
         const fetchMock = stubFetch();
         await cards.refresh([LLAMA], 2_000);
         fetchMock.mockClear();
-        await expect(cards.refresh([], 3_000, true)).resolves.toEqual({ fetched: 2, failed: [] });
+        await expect(cards.refresh([], 3_000, true, 'http://proxy.example:8080')).resolves.toEqual({ fetched: 2, failed: [] });
         expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock).toHaveBeenCalledWith(MODEL_CARD_INDEX_URL, { timeoutMs: 15_000, maxBytes: 8 * 1024 * 1024, proxyUrl: 'http://proxy.example:8080' });
         expect(cards.needsRefresh([LLAMA], 4_000)).toBe(false);
     });
 });

@@ -12,6 +12,7 @@ import { THINKING_EFFORTS } from './thinking';
 import { ThinkingStore } from './thinkingStore';
 import { isLongContext, nextResetAt, totalInputTokens, UsageStore } from './usage';
 import { UsagePanel } from './usagePanel';
+import { createSharedUsageBacking, ResetTimer } from './usageStorage';
 import { buildUsageView } from './usageView';
 
 // Must match package.json contributes.languageModelChatProviders[].vendor.
@@ -32,14 +33,18 @@ export function activate(context: vscode.ExtensionContext): void {
     const log = vscode.window.createOutputChannel('Chat Model Provider for Amazon Bedrock', { log: true });
     context.subscriptions.push(log);
 
-    const usageStore = new UsageStore(context.globalState);
+    const sharedBacking = createSharedUsageBacking(context.globalStorageUri, () => refresh(), log);
+    const usageStore = new UsageStore(context.globalState, sharedBacking);
     const priceStore = new PriceStore(context.globalState);
     const thinkingStore = new ThinkingStore(context.globalState);
     const modelCards = new ModelCardStore(context.globalState);
     const tokenBar = new TokenStatusBar();
     const thinkingBar = new ThinkingStatusBar();
     const signInBar = new SignInStatusBar();
-    context.subscriptions.push(tokenBar, thinkingBar, signInBar);
+    const resetTimer = new ResetTimer(() => {
+        refreshAfterSettingsChange();
+    });
+    context.subscriptions.push(usageStore, resetTimer, tokenBar, thinkingBar, signInBar);
 
     const provider = new AmazonBedrockProvider(log, signInBar, new SsoSignIn(log), {
         thinkingEffort: (modelId) => thinkingStore.get(modelId),
@@ -53,15 +58,16 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             void usageStore
                 .record(profile, id, { name, baseId, route: routeOf(id, resolved) }, usage, s.usageResetDay, s.usageResetHour, new Date(), longContext)
-                .then(refresh);
+                .then(() => refresh())
+                .catch(() => log.error('Could not record shared usage.'));
         },
     }, modelCards);
 
-    const currentView = () => {
+    const currentView = (now = new Date()) => {
         const s = readSettings();
         const region = provider.region;
-        const period = usageStore.get(s.profile, s.usageResetDay, s.usageResetHour);
-        return buildUsageView(s.profile, region, period, nextResetAt(new Date(), s.usageResetDay, s.usageResetHour), region ? priceStore.get(region) : undefined, s.customPricing, modelCards.limits());
+        const period = usageStore.get(s.profile, s.usageResetDay, s.usageResetHour, now);
+        return buildUsageView(s.profile, region, period, nextResetAt(now, s.usageResetDay, s.usageResetHour), region ? priceStore.get(region) : undefined, s.customPricing, modelCards.limits());
     };
 
     const panel = new UsagePanel({
@@ -74,9 +80,14 @@ export function activate(context: vscode.ExtensionContext): void {
                 reset,
             );
             if (choice === reset) {
-                await usageStore.reset(s.profile, s.usageResetDay, s.usageResetHour);
-                log.info(`Usage totals manually reset for profile=${s.profile}`);
-                refresh();
+                try {
+                    await usageStore.reset(s.profile, s.usageResetDay, s.usageResetHour);
+                    log.info(`Usage totals manually reset for profile=${s.profile}`);
+                    refresh();
+                } catch {
+                    log.error('Could not reset shared usage.');
+                    log.show();
+                }
             }
         },
         updatePrices: async () => {
@@ -85,12 +96,14 @@ export function activate(context: vscode.ExtensionContext): void {
                 void vscode.window.showWarningMessage(vscode.l10n.t('The region is not known yet. Open the Chat model picker once so the model list is loaded, then try again.'));
                 return;
             }
+            const { proxyUrl } = readSettings();
             // Model-card prices cover models missing from the price file (most GPT models as of 2026-10-04).
             const [tableResult, cardResult] = await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Downloading Amazon Bedrock prices for {0}', region) },
-                () => Promise.allSettled([priceStore.download(region), modelCards.refresh([], Date.now(), true)]),
+                () => Promise.allSettled([priceStore.download(region, proxyUrl), modelCards.refresh([], Date.now(), true, proxyUrl)]),
             );
             if (cardResult.status === 'fulfilled') {
+                provider.refreshModelList();
                 const { fetched, failed } = cardResult.value;
                 log.info(`Model cards updated for pricing: fetched=${fetched}${failed.length > 0 ? `, failed=${failed.join(', ')}` : ''}`);
             } else {
@@ -114,17 +127,20 @@ export function activate(context: vscode.ExtensionContext): void {
     });
     context.subscriptions.push(panel);
 
-    function refresh(): void {
-        const view = currentView();
+    function refresh(now = new Date()): ReturnType<typeof currentView> {
+        const s = readSettings();
+        const view = currentView(now);
         tokenBar.update(view.totalInput, view.totalOutput, view.rows.some((r) => r.cost !== undefined) ? view.totalCost : undefined);
         panel.refresh(view);
+        resetTimer.schedule(nextResetAt(now, s.usageResetDay, s.usageResetHour));
+        return view;
     }
 
     function refreshAfterSettingsChange(): void {
         const s = readSettings();
         void usageStore
             .configureResetSchedule(s.profile, s.usageResetDay, s.usageResetHour)
-            .then(refresh)
+            .then(() => refresh())
             .catch((error: unknown) => {
                 const message = error instanceof Error ? error.message : String(error);
                 log.error(`Failed to sync usage reset schedule: ${message}`);
@@ -183,7 +199,10 @@ export function activate(context: vscode.ExtensionContext): void {
         // Let users open the output panel from the Command Palette and activate the extension directly.
         vscode.commands.registerCommand('amazonBedrockProvider.showLogs', () => log.show()),
         vscode.commands.registerCommand('amazonBedrockProvider.signIn', () => provider.signIn()),
-        vscode.commands.registerCommand('amazonBedrockProvider.showUsage', () => panel.show(currentView())),
+        vscode.commands.registerCommand('amazonBedrockProvider.showUsage', () => {
+            const view = refresh();
+            panel.show(view);
+        }),
         vscode.commands.registerCommand('amazonBedrockProvider.pickThinkingEffort', () => pickThinkingEffort()),
         vscode.commands.registerCommand('amazonBedrockProvider.pickModelVisibility', () => pickModelVisibility(() => vscode.workspace.getConfiguration(CONFIG_SECTION), log)),
         vscode.commands.registerCommand('amazonBedrockProvider.manageModelPresets', () => pickModelPresets(() => vscode.workspace.getConfiguration(CONFIG_SECTION), () => provider.models, log)),
