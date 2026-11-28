@@ -1,6 +1,6 @@
 # chat-model-provider-for-amazon-bedrock Map
 
-最後核對：2026-11-23，核對對象：專案根目錄、.github、.vscode、scripts／src／test 檔案職責
+最後核對：2026-11-28，核對對象：專案根目錄、.agents、scripts／src／test 檔案職責
 
 ## File Map
 
@@ -10,10 +10,7 @@
 - `.vscodeignore`：VSIX 內容白名單。
 - `esbuild.mjs`：extension bundle 建置。
 - `tsconfig.json`、`tsconfig.test.json`、`vitest.config.mts`：型別檢查與 Vitest 設定。
-- `.vscode/tasks.json`：預設 Extension Development Host 與獨立編譯 task。
-- `.github/instructions/pricing.instructions.md`：費用估算規則。
-- `.github/skills/update-catalog/`：模型目錄更新流程。
-- `scripts/dev-host.mjs`：啟動 Extension Development Host。
+- `.agents/skills/update-catalog/`：模型目錄更新流程。
 - `scripts/check-licenses.mjs`、`scripts/check-l10n.mjs`：封裝前授權及語系檢查。
 - `scripts/check-model-cards.mts`、`scripts/probe-models.mts`：模型卡檢查與能力探測。
 - `src/extension.ts`：啟用、provider／命令／狀態列註冊、設定變更處理。
@@ -24,16 +21,17 @@
 - `src/modelList.ts`、`src/modelListCore.mjs`、`src/modelListCore.d.mts`：模型來源載入與正規化。
 - `src/modelFilter.ts`：供應商分類、版本比較、顯示篩選與其設定選單。
 - `src/modelPresets.ts`：固定模型組合的設定解析、自動名稱與管理選單。
-- `src/modelCards.ts`、`src/modelCardStore.ts`：model card 解析與快取。
+- `src/modelCards.ts`、`src/modelCardStore.ts`：model card 解析與共用快取。
 - `src/proxy.ts`：AWS endpoint 限制、named profile 與 TLS 驗證、HTTP/1.1 CONNECT 代理、公開 HTTPS 下載與代理設定驗證。
 - `src/settings.ts`：extension 設定與自訂價格讀取。
 - `src/thinking.ts`、`src/thinkingStore.ts`、`src/thinkingTags.ts`：thinking 請求設定、持久化、回應標籤處理。
 - `src/errors.ts`、`src/operationErrorContext.cjs`、`src/operationErrorContext.d.cts`：錯誤呈現與操作脈絡。
 - `src/signIn.ts`：使用者啟動的 AWS SSO 登入。
 - `src/statusBar.ts`：token 用量、thinking effort、登入狀態列。
-- `src/pricing.ts`、`src/priceStore.ts`：價格解析、費用估算、價格快取。
-- `src/usage.ts`、`src/usageStorage.ts`、`src/usageView.ts`、`src/usagePanel.ts`：使用量記錄、version 1 共用 JSON、SQLite 跨行程鎖、無法安全寫入時略過、到期計時、彙總與面板。
-- `test/`：Vitest 單元測試（含 manifest／task／版本與 CHANGELOG 結構契約、開發 Host CLI 替身）；`test/vscode-stub.ts` 為 VS Code API 替身。
+- `src/pricing.ts`、`src/priceStore.ts`：價格解析、費用估算、區域價格表下載與共用儲存。
+- `src/sharedStorage.ts`：Default Profile 共用目錄解析、SQLite 跨行程鎖、原子寫入、外部變更 watcher，以及 `shared-prices.json`、`shared-model-cards.json` 的 version 1 契約。
+- `src/usage.ts`、`src/usageStorage.ts`、`src/usageView.ts`、`src/usagePanel.ts`：使用量記錄、version 1 共用 JSON、無法安全寫入時略過、到期計時、彙總與面板。
+- `test/`：Vitest 單元測試（含 manifest／版本與 CHANGELOG 結構契約）；`test/vscode-stub.ts` 為 VS Code API 替身。
 - `README.md`、`README.zh-tw.md`、`README.ja.md`：三語使用說明。
 - `CHANGELOG.md`、`CHANGELOG.zh-tw.md`、`CHANGELOG.ja.md`：三語版本紀錄。
 - `package.nls*.json`、`l10n/`：manifest 與執行期介面翻譯。

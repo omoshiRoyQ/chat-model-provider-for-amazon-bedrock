@@ -1,6 +1,6 @@
 # chat-model-provider-for-amazon-bedrock
 
-VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模型接進 VS Code Chat 模型選單。只使用 `bedrock-runtime` endpoint 的 AWS SDK Native ConverseStream API；不使用 `bedrock-mantle` endpoint，也不使用 `bedrock-runtime` 上的 OpenAI 相容 Chat Completions／Responses 或 Anthropic Messages API。TypeScript、pnpm、esbuild。本文件可獨立接手，不依賴個人電腦上的規則檔。
+VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模型接進 VS Code Chat 模型選單。只使用 `bedrock-runtime` endpoint 的 AWS SDK Native ConverseStream API；不使用 `bedrock-mantle` endpoint，也不使用 `bedrock-runtime` 上的 OpenAI 相容 Chat Completions／Responses 或 Anthropic Messages API。TypeScript、pnpm、esbuild。本文件可獨立接手，所有必要規則均在本檔或 repo 相對路徑內。
 
 ## Environment and Permissions
 
@@ -23,9 +23,8 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 - 套件管理只用 pnpm，不新增 npm／yarn lock。devDependencies 用精確版本；安裝建置指令維持 `pnpm-workspace.yaml` 逐項 `allowBuilds` 核准，不擴大範圍。
 - 授權：devDependencies 沒有被 runtime 匯入；執行期相依套件依實際散布內容列入 `THIRD-PARTY-NOTICES.md`。允許清單為 MIT、ISC、BSD-2-Clause、BSD-3-Clause、Apache-2.0、0BSD，其他授權先確認。檢查腳本不能取代上游著作權與授權全文核對。
 - 建置：`pnpm run compile`（`tsc --noEmit` 後以 esbuild 輸出 `dist/extension.js`）。測試：`pnpm test`（Vitest，`test/*.test.ts`）；`typecheck` 另以 `tsconfig.test.json` 檢查測試與 Bedrock 開發腳本，保留 `Node16` 模組解析與既有嚴格旗標。
-- 開發 Host：`dev` 為 `pnpm run compile && node scripts/dev-host.mjs`，先編譯一次；腳本依自身位置解析專案絕對路徑，同時傳給 `--extensionDevelopmentPath` 與工作區參數，開啟非偵錯 Host（需 `code` CLI）。`.vscode/tasks.json` 的 `Open Extension Development Host` 排第一、執行 `pnpm run dev`、cwd 為 `${workspaceFolder}`、是唯一 `group.isDefault` build task、`presentation.reveal` 為 `always`、不得加 compile `dependsOn`。不建議 F5，但保留既有 `.vscode/launch.json`。
-- 證據層級：單元測試、編譯、Host、安裝後 VSIX 互不替代；發布驗收須操作實際 VSIX。
-- VSIX：`.vscodeignore` 以白名單控制內容。`pnpm run package:verified`（全部單元測試 → package → package:ls）任一步失敗即停止；`package` 為 `vsce package --no-dependencies`，由 `vscode:prepublish` 各執行一次 typecheck、check 與 production build，不要先接 `verify` 重複檢查。`verify` 是不封裝的完整驗證，`package:ls` 只列內容；皆不取代安全／發布審查或安裝後驗收。
+- 證據層級：單元測試、編譯、安裝後 VSIX 互不替代；實測與發布驗收統一以封裝 VSIX 安裝後操作確認（不維護 `.vscode/` 啟動設定或 Extension Development Host 腳本，2026-11-28 決定）。
+- VSIX：`.vscodeignore` 以白名單控制內容。`pnpm run package:verified`（全部單元測試 → package → package:ls）任一步失敗即停止；`package` 先確保 `.tmp` 目錄存在再執行 `vsce package --no-dependencies --out .tmp`，由 `vscode:prepublish` 各執行一次 typecheck、check 與 production build，不要先接 `verify` 重複檢查。`verify` 是不封裝的完整驗證，`package:ls` 只列內容；皆不取代安全／發布審查或安裝後驗收。
 - 測試預期值來自 AWS 文件、實測的 AWS 回應或使用者決定，並在測試檔註明來源；不可用程式自己算出的結果當預期值。
 - `verify` 不可包含 `check-model-cards`、`probe-models`（後者會送計費請求，前者帶 `--profile` 時也會）。探測結果寫入 `.tmp/probe-models-results.txt`，每次覆寫、不進 Git（使用者 2026-10-21 決定）。
 - 模型能否出現在 Chat 選單、Agent 模式能否呼叫 tool，只能由使用者在 VS Code 內操作確認；回報時說明尚未驗證。
@@ -40,7 +39,18 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 
 ## Project-specific Rules
 
-費用估算規則在 `.github/instructions/pricing.instructions.md`；Bedrock 專屬流程在 `.github/skills/update-catalog/`。
+Bedrock 專屬流程在 `.agents/skills/update-catalog/`。
+
+## Pricing
+
+- 價格來源依序是：使用者的 `customPricing`、AWS 公開價格檔 `AmazonBedrockFoundationModels/current/<region>/index.json`（不需要 `pricing:*` 權限）、AWS model card 的 Pricing 段落。model card 是使用者同意的第二來源（2026-10-04），理由是 GPT-6 Astra 的 card 價格與價格檔完全相同，而其他 GPT 只在 card 上有價格。兩個來源都查不到的單價不可自行推測，也不可用 OpenAI 官方價格換算。
+- card 的表格解析失敗時視為沒有價格，修正 `src/modelCards.ts`；`check-model-cards` 會列出 `has a price table that failed to parse` 的 card。
+- 價格檔的 region 一律用設定值，沒有設定時用 SDK 從 profile 解析到的值，不可寫死 `us-west-2`。
+- long-context 價格：單一請求的輸入超過門檻時，整個請求都用 long-context 單價。門檻寫在 CATALOG 的 `longContextThreshold`，每次記錄使用量時就分類，因為累計後就分不出來。判斷用的是總輸入（含快取讀取與寫入），這是使用者的決定（2026-10-04）。理由：card 沒寫快取算不算，寧可多估也不要少估；費用本來就是估算，有人回報與帳單不符再改。
+- 門檻來源：GPT 取自 model card 的 Pricing 段落（272K）。Claude 目前只有 Haiku 5.5 有這一層，門檻 100K 取自 Anthropic 官方價格頁（`platform.claude.com/docs/en/about-claude/pricing` 的「prompts over 100,000 tokens」），因為 AWS 的 card 與價格頁都沒寫門檻；這是使用者的決定（2026-10-09）。AWS 公開價格檔有 `_long_ctx` 單價可佐證有這一層，但不含門檻。反例：看到價格檔有 `_long_ctx` 就沿用 GPT 的 272K。
+- 依 Geo、Global 或 In-Region 路由選價，查 `src/pricing.ts` 的 `lookupPrice`。
+- cache read 與 cache write 必須各自套用對應單價。例：input 4、cacheRead 0、cacheWrite 35,463、output 931；每百萬單價依序為 input $4、read $0.2、write $5、output $20，估算為 $0.195951，畫面顯示 $0.1960。
+- 區域價格表由使用者按 Update Prices 後下載並按 region 儲存在 Default Profile 通用區（`shared-prices.json`），沒有內建價格表。cost 是估算值，畫面顯示到小數點後四位，實際費用以 AWS 帳單為準。
 
 ## Release Approval
 
@@ -58,7 +68,7 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 
 - `modelVisibility` 是 UI／JSON 共用的 window scope 物件；舊的 `modelFilter` 已移除（使用者 2026-10-25 決定）。以 inspect 明確值判斷，不用 manifest default 或 get 的合併物件；缺設定時預設 Anthropic＋OpenAI、版本不限。Workspace 物件完整取代 User，User 內的本機／Remote User 合併依 VS Code；無效物件採空選取並保留診斷，不當成全部。選單只詢問已選供應商的版本門檻，selected 模式儲存時清除未選供應商的既有門檻；GPT 門檻設定時同時隱藏 GPT-OSS 系列。反例：無效物件被當成全部，或留下未選供應商的舊門檻。
 - Settings manifest 順序固定為 `profile`、`region`、`inferenceScope`、`modelVisibility`、`modelPresets`、`usageResetDay`、`usageResetHour`、`customPricing`、`proxyUrl`，`order` 依序 1–9。
-- 使用量統計集中儲存於 Default Profile 的擴充功能 `globalStorage` 共用檔案（version 1 `shared-usage.json`，仍依 AWS `profile` 名稱分組）。可存取同一本機目錄的 VS Code Profile 與 Copilot Harness／Local Harness 以 Node 內建 SQLite 交易協調跨行程鎖；SQLite 不存使用量。若沒有可共用的本機路徑、鎖逾時或寫入失敗，該筆本機用量不儲存、不另存各 Profile、也不事後補記；Chat 回應與 Session Info token 不受影響，但本機估算可能偏低。Chat 回應同時以 `mimeType: 'usage'` 的 `LanguageModelDataPart` 回報 token 數，不帶 Copilot 計費欄位以免混入 Copilot AI Credits（2026-11-23 決定）。
+- 使用量統計集中儲存於 Default Profile 的擴充功能 `globalStorage` 共用檔案（version 1 `shared-usage.json`，仍依 AWS `profile` 名稱分組）；下載的區域價格表與 Model Card 快取亦同置於該通用目錄的獨立檔案（`shared-prices.json`、`shared-model-cards.json`），各有獨立的 Node 內建 SQLite 寫入鎖（SQLite 不存資料）、原子寫入、外部變更 watcher 與一次性 `globalState` 舊資料遷移（不覆蓋共用區既有資料，2026-11-28 決定）。若沒有可共用的本機路徑、鎖逾時或寫入失敗，該筆本機用量不儲存、價格與 Model Card 下載則直接拋錯，均不另存各 Profile 的 `globalState`。Chat 回應同時以 `mimeType: 'usage'` 的 `LanguageModelDataPart` 回報 token 數，不帶 Copilot 計費欄位以免混入 Copilot AI Credits（2026-11-23 決定）。
 - Bedrock 與認證子請求都忽略 AWS SDK 的自訂 endpoint 設定，只連 SDK 預設 HTTPS endpoint；Proxy 只由 machine scope 的 `proxyUrl` 明確設定。直連、HTTPS proxy 與 proxy tunnel 後的目的端都必須驗證 TLS 憑證，不因 Node 環境的設定略過驗證。
 - 不可複製三個參考 extension（`arifum.bedrock-vscode-chat`、`easytocloud.bedrock-mantle-vscode-chat`、`abhimanyus1997.bedrock-bridge-copilot`）的程式碼，只能參考做法。理由：使用者的決定。
 - Credential 一律交給 AWS SDK provider（如 `fromIni({ profile })`），每次請求都透過 provider 取得；不可把 `accessKeyId`、`secretAccessKey`、`sessionToken` 存進自己的變數或快取重用。理由：參考 extension 在 SSO 過期後不會重新整理，就是這個原因。
@@ -71,7 +81,7 @@ VS Code extension，實作 `LanguageModelChatProvider`，把 Amazon Bedrock 模�
 
 - 不要為了「讓受限模式可用」而宣告 `capabilities.untrustedWorkspaces`：Restricted Mode 下 VS Code Chat 自己封鎖所有模型（顯示「Models unavailable while in Restricted mode」），宣告 `limited` 也無法改變（2026-10-09 實測）。未宣告時 extension 在受限模式停用，屬預期行為，資安審查不必列為發現。
 - `bedrock-runtime` Native 路徑已實測可用 SSO profile：控制面 `list-inference-profiles` 與 runtime `ConverseStream` 都成功（2026-09-25，`us-west-2`）。
-- 這台電腦按 F5 時，Extension Development Host 視窗出現 `command '...' not found` 是假線索：真因是 js-debug 連 `::1:<port>` 被拒（`ECONNREFUSED`），Extension Host 60 秒後逾時，沒有任何 extension 在執行。不要往指令註冊、`package.json`、VPN 或 proxy 方向追（換個人網路結果相同）。確認方式：主視窗 `exthost.log` 有 `ECONNREFUSED ::1`，開發視窗 `renderer.log` 有 `Extension host did not start`。本機實測：`localhost` 先解析成 `::1`，只在 `127.0.0.1` 監聽的偵錯埠連 `::1` 會被拒。改用 `Ctrl+Shift+B` 的 `Open Extension Development Host`（先編譯再執行 `code --new-window --extensionDevelopmentPath=<repo>`，不能設中斷點）。（2026-09-25 發生三次）
+- 這台電腦按 F5 時，Extension Development Host 視窗出現 `command '...' not found` 是假線索：真因是 js-debug 連 `::1:<port>` 被拒（`ECONNREFUSED`），Extension Host 60 秒後逾時，沒有任何 extension 在執行（2026-09-25 發生三次）。專案已移除 `.vscode/` 與開發 Host 腳本，統一改以封裝 VSIX 後安裝測試（2026-11-28 決定）。
 
 
 

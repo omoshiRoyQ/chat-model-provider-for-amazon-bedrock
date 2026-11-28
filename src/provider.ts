@@ -95,6 +95,8 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
     private disposed = false;
     /** Models from the most recent successful query, indexed by the model ID seen by VS Code. */
     private modelsById = new Map<string, ResolvedModel>();
+    /** Snapshot of each visible model's card-derived limits from the most recent composition. */
+    private lastCardSnapshot = new Map<string, string>();
     /** Presets from the most recent successful query, indexed by their Chat model ID. */
     private presetsById = new Map<string, ResolvedPreset>();
     /** Region used by the most recent model-list query (from settings or resolved by the SDK from the profile). */
@@ -132,11 +134,25 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
         });
     }
 
+    private cardKey(limits: ReturnType<ModelCardStore['limits']>, id: string): string {
+        const card = limits.get(id);
+        return JSON.stringify(card ? [card.contextWindow, card.maxOutputTokens, card.converse, card.longContextThreshold] : null);
+    }
+
     refreshModelList(): void {
         if (this.disposed) return;
         this.listCache = undefined;
         this.listGeneration++;
         this.changeEmitter.fire();
+    }
+
+    /** Refreshes the model list on external model-card updates only when a visible model's card limits changed, avoiding retry loops on failed pages. */
+    syncExternalModelCards(): void {
+        if (this.disposed || !this.cardsRelevant) return;
+        const latest = this.modelCards.limits();
+        if (this.models.some((model) => this.cardKey(latest, model.baseId) !== this.lastCardSnapshot.get(model.baseId))) {
+            this.refreshModelList();
+        }
     }
 
     /** Current region: prefer the configured value, otherwise use the most recently resolved profile region; empty before the first query. */
@@ -292,12 +308,13 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             if (sources.foundationsDenied) {
                 this.log.warn(`AWS profile "${settings.profile}" lacks bedrock:ListFoundationModels; listing inference profiles only and assuming image input is supported`);
             }
+            const cardLimits = this.modelCards.limits();
             const { models, notes, unknownIds, usesModelCards } = resolveModels(
                 sources.profiles,
                 sources.foundations,
                 settings.inferenceScope,
                 false,
-                this.modelCards.limits(),
+                cardLimits,
                 undefined,
                 (baseId) => modelVisibility(baseId, settings.modelVisibility.value).visible,
             );
@@ -308,6 +325,7 @@ export class AmazonBedrockProvider implements vscode.LanguageModelChatProvider, 
             const visibleModels = models.map((model) => modelVisibility(model.baseId, settings.modelVisibility.value).versionUnknown
                 ? { ...model, versionUnknown: true } : model);
             this.modelsById = new Map(visibleModels.map((m) => [m.invokeId, m]));
+            this.lastCardSnapshot = new Map(visibleModels.map((m) => [m.baseId, this.cardKey(cardLimits, m.baseId)]));
             const presetConfig = presetSettings();
             for (const diagnostic of presetConfig.diagnostics) this.log.warn(diagnostic);
             const presets = expandPresets(presetConfig.value, visibleModels);

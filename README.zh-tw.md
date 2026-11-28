@@ -15,7 +15,7 @@
 - 可為支援設定 thinking 的模型建立固定 effort 的額外 Chat 項目；原始模型仍保留。組合名稱會依據底層模型的顯示名稱、effort 與固定路由自動產生，例如 `Luna-Medium (Geo)`。
 - 狀態列顯示本期輸入／輸出 token 累計；使用量面板依模型列出請求數、token 數（含 prompt cache 的讀取與寫入）與費用估算。每次請求的 Bedrock token 用量另行回報給 VS Code，供 Chat Session Info／context window 資訊使用；這不是本期累計，也不會混入 Copilot credit 統計。
 - 支援 prompt cache 的 Claude 模型會使用 Bedrock prompt caching，重複的對話內容可以從快取讀取。
-- 可更新價格表、設定自訂價格、設定每月使用量重設日期與 UTC 時間。只有可存取同一份共用本機儲存的 Host 會共用使用量總計，並依 AWS profile 分組；排程重設時間一到，就會自動更新狀態列和已開啟的使用量面板。
+- 可更新價格表、設定自訂價格、設定每月使用量重設日期與 UTC 時間。只有可存取同一份共用本機儲存的 Host 會共用使用量總計（依 AWS profile 分組）、下載的區域價格表與模型卡快取；價格更新或排程重設時間一到，就會自動更新狀態列和已開啟的使用量面板。
 
 ## 必要條件
 
@@ -152,7 +152,7 @@ aws bedrock list-foundation-models --profile <profile> --region <region>
 
 ## 使用量與費用
 
-Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route，累計到 Default Profile 的 VS Code 擴充功能 `globalStorage` 目錄中的共用使用量檔案；因此只有可存取同一份共用本機儲存的 Host 會累計到同一份總計，資料仍依 AWS profile 分組。每次請求的 Bedrock 輸入／輸出數量另行回報給 VS Code，供 Chat Session Info／context window 資訊使用；這與本期累計分開，也不會影響 Copilot credit 總計。排程重設時間到達時，擴充功能會自動更新狀態列和已開啟的使用量面板。可存取同一本機路徑的 Host 會使用同一份 JSON 使用量檔案；Node 內建的 SQLite 只用來協調寫入鎖，不會儲存使用量。若沒有可共用的本機路徑、鎖逾時或儲存空間無法使用，該筆使用量會略過，不會改存到 VS Code Profile，也不會排隊日後補記，因此估算可能偏低；略過該筆時不會刪除或搬移既有使用量；排程或手動重設仍照常運作。這不影響 Chat 回應、Session Info token 數或 AWS 帳單。既有的一次性 VS Code `globalState` 舊使用量遷移仍會保留；新略過的記錄不會搬移。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。按下 **更新價格** 會下載 AWS 公開價格表，以及 AWS 模型卡 上的價格表。單價依序取自自訂價格、公開價格表、模型卡，所以公開價格表沒有的 GPT 模型也能估算費用；價格取自 模型卡 時，費用欄會標示 **模型卡**。三者都沒有價格的模型會顯示 **無價格資料**。
+Bedrock 回報的輸入／輸出 token 會依 AWS profile、模型與 inference route，累計到 Default Profile 的 VS Code 擴充功能 `globalStorage` 目錄中的共用使用量檔案；因此只有可存取同一份共用本機儲存的 Host 會累計到同一份總計，資料仍依 AWS profile 分組。每次請求的 Bedrock 輸入／輸出數量另行回報給 VS Code，供 Chat Session Info／context window 資訊使用；這與本期累計分開，也不會影響 Copilot credit 總計。排程重設時間到達時，擴充功能會自動更新狀態列和已開啟的使用量面板。可存取同一本機路徑的 Host 會使用同一份 JSON 使用量檔案；Node 內建的 SQLite 只用來協調寫入鎖，不會儲存使用量。若沒有可共用的本機路徑、鎖逾時或儲存空間無法使用，該筆使用量會略過，不會改存到 VS Code Profile，也不會排隊日後補記，因此估算可能偏低；略過該筆時不會刪除或搬移既有使用量；排程或手動重設仍照常運作。這不影響 Chat 回應、Session Info token 數或 AWS 帳單。既有的一次性 VS Code `globalState` 舊使用量遷移仍會保留；新略過的記錄不會搬移。費用是估算值，不等同 AWS 帳單；實際費用以 AWS 帳單為準。按下 **更新價格** 會下載 AWS 公開價格表以及 AWS 模型卡 上的價格表，並分別寫入同一 Default Profile `globalStorage` 目錄下的共用 JSON 檔（依 region 分組的 `shared-prices.json` 與 `shared-model-cards.json`），各自使用獨立的 SQLite 寫入鎖；任一 VS Code Profile 更新後，共用同一本機路徑的其他視窗也會即時更新顯示。若沒有可共用的本機路徑、鎖逾時或寫入失敗，價格與模型卡下載會直接回報錯誤且不會回退寫入各 Profile 的 `globalState`；既有舊版 `globalState` 價格表與模型卡快取會執行一次性遷移，且不會覆蓋共用區已有的資料。單價依序取自自訂價格、公開價格表、模型卡，所以公開價格表沒有的 GPT 模型也能估算費用；價格取自 模型卡 時，費用欄會標示 **模型卡**。三者都沒有價格的模型會顯示 **無價格資料**。
 
 固定組合的請求會依底層模型與路由記錄使用量及估算費用，因此會和同路由的原始模型累計在一起。effort 可能影響 Bedrock 回報的 token 數，但不會新增另一套價格或改變費用估算方式。
 
@@ -218,13 +218,9 @@ VS Code 本身可能傳送的使用狀況與診斷資料，依 VS Code 的 `tele
 - **未使用設定的網路路徑**：確認 `amazonBedrockProvider.proxyUrl` 是不含內嵌憑證的 `http://` 或 `https://` 網址。此擴充功能不會讀取 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 - **完整診斷**：使用命令面板的 **顯示紀錄**；分享前請遮蔽個人資料與驗證資訊。
 
-## 開發
-
-在專案根目錄執行 `pnpm run dev`，或按 `Ctrl+Shift+B` 執行預設的 **Open Extension Development Host** task。兩種方式都會先編譯一次，再透過 VS Code CLI 開啟此專案的非偵錯 Extension Development Host。請確認 `code` CLI 已在 `PATH` 中。這兩種啟動方式都不會執行單元測試，也不會監看檔案變更並自動重新編譯；修改後請重新執行。
-
 ## 產生 VSIX
 
-執行 `pnpm run package:verified`，依序執行全部單元測試、封裝，並列出封裝內容。封裝時會自動執行 `vscode:prepublish`，完成型別檢查、授權與語系檢查及正式建置；每項前置流程只跑一次，失敗就停止後續步驟。VSIX 產生在專案根目錄，檔名為 `chat-model-provider-for-amazon-bedrock-<version>.vsix`。
+執行 `pnpm run package:verified`，依序執行全部單元測試、封裝，並列出封裝內容。封裝時會自動執行 `vscode:prepublish`，完成型別檢查、授權與語系檢查及正式建置；每項前置流程只跑一次，失敗就停止後續步驟。VSIX 產生在 `.tmp/chat-model-provider-for-amazon-bedrock-<version>.vsix`。
 
 `pnpm run verify` 是不產生 VSIX 的完整檢查；`pnpm run package` 是僅執行封裝的指令，會自動執行 prepublish，但不跑單元測試。安全審查、發布稽核與安裝後的 VSIX 驗收仍須另外完成。這些指令不安裝、不發布，也不呼叫 Bedrock 模型；執行失敗時，不要把先前留下的 VSIX 當成本次產生的 VSIX。
 

@@ -54,7 +54,7 @@ const isPrice = (v: unknown): v is number => typeof v === 'number' && v >= 0;
  * that are non-negative numbers when present; ignores malformed entries.
  */
 export function readCustomPricing(value: unknown): CustomPrices {
-    const result: Record<string, ModelPrice> = {};
+    const result: Record<string, ModelPrice> = Object.create(null);
     if (!value || typeof value !== 'object') {
         return result;
     }

@@ -1,6 +1,6 @@
 // Pre-release check: every bundled production package must use an allowlisted license
 // and be listed under the matching `## <SPDX>` section of THIRD-PARTY-NOTICES.md.
-// Canonical copy lives in the user-level `project-vscode-extension` skill; keep repo copies identical.
+// Shared check script copied from a project template; keep copies identical across repos.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';

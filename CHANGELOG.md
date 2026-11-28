@@ -2,6 +2,11 @@
 
 [TW](CHANGELOG.zh-tw.md) | [JA](CHANGELOG.ja.md)
 
+## 2.1.1 (2026-11-28)
+
+- Downloaded regional price tables and AWS model-card caches are now stored in the Default Profile's shared extension storage alongside usage totals, so VS Code Profiles sharing the same local path reuse one **Update Prices** download and refresh open usage panels automatically. When shared storage or its write lock is unavailable, downloads report an error instead of falling back to per-Profile storage.
+- Previously downloaded price tables and model-card caches in VS Code `globalState` are migrated once to shared storage without overwriting newer shared data.
+
 ## 2.1.0 (2026-11-23)
 
 - Added an explicit `amazonBedrockProvider.proxyUrl` setting for Bedrock and public AWS price/model-card downloads. The extension no longer reads generic HTTP proxy environment variables or configured Bedrock endpoint overrides, and it continues to verify TLS for the proxy and destination connections.

@@ -142,67 +142,24 @@ describe('extension manifest and localization contract', () => {
         expect(schema.items.properties.effort.enum).toEqual(['default', 'off', 'low', 'medium', 'high', 'xhigh', 'max']);
     });
 
-    it('keeps the development script and task contract without duplicate compilation', () => {
+    it('keeps the build and check script contract without running AWS probes', () => {
         const manifest = readJson<{ scripts: Record<string, string> }>('package.json');
-        const taskConfig = readJson<{
-            tasks: {
-                label: string;
-                type: string;
-                command: string;
-                group?: string | { kind: string; isDefault?: boolean };
-                options?: { cwd?: string };
-                presentation?: { reveal?: string };
-                dependsOn?: string | string[];
-                problemMatcher?: string[];
-            }[]
-        }>(`.vscode/tasks.json`);
         const scripts = manifest.scripts;
-        const defaultTasks = taskConfig.tasks.filter((task) => typeof task.group === 'object' && task.group.isDefault === true);
-        const hostTask = taskConfig.tasks.find((task) => task.label === 'Open Extension Development Host');
-        const compileTask = taskConfig.tasks.find((task) => task.label === 'pnpm: compile');
-        const compileDependencies = taskConfig.tasks.flatMap((task) => task.dependsOn === undefined
-            ? []
-            : Array.isArray(task.dependsOn) ? task.dependsOn : [task.dependsOn]);
 
-        expect(Object.keys(scripts)).toHaveLength(15);
-        expect(scripts.dev).toBe('pnpm run compile && node scripts/dev-host.mjs');
-        expect((scripts.dev.match(/pnpm run compile/g) ?? [])).toHaveLength(1);
+        expect(Object.keys(scripts)).toHaveLength(14);
         expect(scripts.typecheck).toBe('tsc --noEmit && tsc -p tsconfig.test.json');
         expect(scripts.compile).toBe('pnpm run typecheck && node esbuild.mjs');
         expect(scripts['check-model-cards']).toBeTruthy();
         expect(scripts['probe-models']).toBeTruthy();
         expect(scripts.check).not.toMatch(/check-model-cards|probe-models/);
         expect(scripts.verify).not.toMatch(/check-model-cards|probe-models/);
-
-        expect(defaultTasks).toHaveLength(1);
-        expect(defaultTasks[0]?.label).toBe('Open Extension Development Host');
-        expect(defaultTasks[0]?.group).toMatchObject({ kind: 'build', isDefault: true });
-        expect(taskConfig.tasks[0]?.label).toBe('Open Extension Development Host');
-        expect(hostTask).toMatchObject({
-            type: 'shell',
-            command: 'pnpm run dev',
-            options: { cwd: '${workspaceFolder}' },
-            group: { kind: 'build', isDefault: true },
-            presentation: { reveal: 'always' },
-            problemMatcher: [],
-        });
-        expect(hostTask).not.toHaveProperty('args');
-        expect(hostTask).not.toHaveProperty('dependsOn');
-        expect(compileDependencies).not.toContain('pnpm: compile');
-        expect(compileTask).toMatchObject({
-            type: 'shell',
-            command: 'pnpm run compile',
-            group: 'build',
-            problemMatcher: ['$tsc'],
-        });
-        expect(compileTask).not.toHaveProperty('dependsOn');
     });
 
     /** The user's packaging requirement: tests and prepublish checks run once before a VSIX, without AWS probes or publishing. */
     it('provides one verified packaging entry point while preserving non-packaging verification', () => {
         const { scripts } = readJson<{ scripts: Record<string, string> }>('package.json');
         expect(scripts['package:verified']).toBe('pnpm run test && pnpm run package && pnpm run package:ls');
-        expect(scripts.package).toBe('vsce package --no-dependencies');
+        expect(scripts.package).toBe("node -e \"require('node:fs').mkdirSync('.tmp', { recursive: true })\" && vsce package --no-dependencies --out .tmp");
         expect(scripts['vscode:prepublish']).toBe('pnpm run typecheck && pnpm run check && node esbuild.mjs --production');
         expect(scripts.check).toBe('pnpm run check:licenses && pnpm run check:l10n');
         expect(scripts.verify).toBe('pnpm run compile && pnpm test && pnpm run check && pnpm run package:ls');

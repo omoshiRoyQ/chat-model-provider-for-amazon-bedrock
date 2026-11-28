@@ -1,12 +1,13 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { promisify } from 'node:util';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { activate } from '../src/extension';
+import { createSharedModelCardBacking, createSharedPriceBacking, FileSharedModelCardBacking, FileSharedPriceBacking } from '../src/sharedStorage';
 import { addUsage, currentPeriodStart, isLongContext, nextResetAt, totalInputTokens, type UsagePeriod, UsageStore } from '../src/usage';
 import { createSharedUsageBacking, FileSharedUsageBacking, MAX_TIMEOUT_MS, ResetTimer, resolveDefaultProfileStorageDir } from '../src/usageStorage';
 
@@ -319,7 +320,14 @@ describe('Shared usage storage across VS Code Profiles', () => {
         const storage = join(root, 'globalStorage', 'diag.extension');
         const named = join(root, 'profiles', 'test', 'globalStorage', 'diag.extension');
         const worker = join(root, 'worker.cjs');
-        const compiled = transformSync(readFileSync(join(process.cwd(), 'src', 'usageStorage.ts'), 'utf8'), { loader: 'ts', format: 'cjs', target: 'node22' }).code;
+        const compiled = buildSync({
+            entryPoints: [join(process.cwd(), 'src', 'usageStorage.ts')],
+            bundle: true,
+            write: false,
+            platform: 'node',
+            format: 'cjs',
+            target: 'node22',
+        }).outputFiles[0].text;
         writeFileSync(worker, `${compiled}
 const fs = require('node:fs');
 const path = require('node:path');
@@ -500,6 +508,67 @@ run().catch((error) => { console.error(error.message); process.exitCode = 1; });
         await secondStore.record('work', modelId, info, tokens(200, 10), 1, 0, now);
         expect(secondStore.get('work', 1, 0, now).models[modelId]).toMatchObject({ inputTokens: 700, outputTokens: 50, requests: 2 });
         secondStore.dispose();
+    });
+
+    it('isolates shared-prices.json and shared-model-cards.json from shared-usage.json and preserves corrupt files', async () => {
+        const userDir = makeTempUserDir();
+        const extId = 'omoshiroyq.chat-model-provider-for-amazon-bedrock';
+        const defaultUri = { scheme: 'file', fsPath: join(userDir, 'globalStorage', extId) };
+        const namedUri = { scheme: 'file', fsPath: join(userDir, 'profiles', 'work', 'globalStorage', extId) };
+        const log = { info: vi.fn(), warn: vi.fn() };
+
+        let priceChanged = 0;
+        let cardChanged = 0;
+        const priceDefault = createSharedPriceBacking(defaultUri, () => { priceChanged++; }, log)!;
+        const priceNamed = createSharedPriceBacking(namedUri, () => { }, log)!;
+        const cardDefault = createSharedModelCardBacking(defaultUri, () => { cardChanged++; }, log)!;
+        const cardNamed = createSharedModelCardBacking(namedUri, () => { }, log)!;
+
+        try {
+            const west = {
+                region: 'us-west-2',
+                publicationDate: '2026-10-04T00:00:00Z',
+                source: 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrockFoundationModels/current/us-west-2/index.json',
+                models: { 'Claude Opus 5.5': { geo: { inputPerM: 5, outputPerM: 25 }, global: { inputPerM: 5, outputPerM: 25 } } },
+            };
+            const east = { ...west, region: 'us-east-1' };
+            await Promise.all([
+                priceNamed.writeRegion('us-west-2', () => west),
+                priceDefault.writeRegion('us-east-1', () => east),
+            ]);
+            expect(priceDefault.readRegion('us-west-2')).toEqual(west);
+            expect(priceNamed.readRegion('us-east-1')).toEqual(east);
+
+            await cardNamed.writeCache(() => ({ version: 2, checkedAt: 1_000, searched: ['openai.gpt-6-astra'], cards: {} }));
+            expect(cardDefault.readCache()).toEqual({ version: 2, checkedAt: 1_000, searched: ['openai.gpt-6-astra'], cards: {} });
+
+            await vi.waitFor(() => {
+                expect(priceChanged).toBeGreaterThanOrEqual(1);
+                expect(cardChanged).toBeGreaterThanOrEqual(1);
+            });
+
+            // Corrupt price file must not be overwritten and readRegion must return undefined safely.
+            const corrupt = '{not-valid-json';
+            const priceFile = (priceDefault as FileSharedPriceBacking).path;
+            const cardFile = (cardDefault as FileSharedModelCardBacking).path;
+            writeFileSync(priceFile, corrupt);
+            expect(priceDefault.readRegion('us-west-2')).toBeUndefined();
+            expect(readFileSync(priceFile, 'utf8')).toBe(corrupt);
+            await expect(priceDefault.writeRegion('us-west-2', () => west)).rejects.toThrow();
+            expect(readFileSync(priceFile, 'utf8')).toBe(corrupt);
+
+            // Corrupt model card file must not be overwritten either.
+            writeFileSync(cardFile, '{"version":999}');
+            expect(cardDefault.readCache()).toBeUndefined();
+            expect(readFileSync(cardFile, 'utf8')).toBe('{"version":999}');
+            await expect(cardDefault.writeCache(() => ({ version: 2, checkedAt: 2_000, searched: [], cards: {} }))).rejects.toThrow('Invalid shared model card document');
+            expect(readFileSync(cardFile, 'utf8')).toBe('{"version":999}');
+        } finally {
+            priceDefault.dispose();
+            priceNamed.dispose();
+            cardDefault.dispose();
+            cardNamed.dispose();
+        }
     });
 });
 
@@ -683,6 +752,75 @@ describe('ResetTimer and status-bar/panel auto reset', () => {
                 other.dispose();
             }
         } finally {
+            for (const sub of subscriptions) {
+                sub.dispose();
+            }
+        }
+    });
+
+    // User decision (2026-11-28): prices downloaded in one VS Code Profile are shared with every Profile that uses the same Default Profile directory.
+    it('shows prices downloaded by another VS Code Profile in an open usage panel', async () => {
+        const root = makeStorageDir();
+        roots.push(root);
+        const extId = 'diag.extension';
+        const log = { info: vi.fn(), warn: vi.fn() };
+        let webviewHtml = '';
+
+        const seeder = new UsageStore(
+            { get: <T>(_k: string, def?: T) => def, update: async () => undefined } as unknown as vscode.Memento,
+            createSharedUsageBacking({ scheme: 'vscode-userdata', fsPath: join(root, 'globalStorage', extId) }, () => { }, log),
+        );
+        await seeder.record('work', 'us.anthropic.claude-opus-5-5', { name: 'Claude Opus 5.5', baseId: 'anthropic.claude-opus-5-5', route: 'Geo' }, tokens(1_000_000, 0), 1, 0, new Date());
+        seeder.dispose();
+
+        vi.spyOn(vscode.window, 'createStatusBarItem').mockImplementation(() => ({ name: '', text: '', tooltip: '', command: '', backgroundColor: undefined, show: vi.fn(), hide: vi.fn(), dispose: vi.fn() }) as unknown as vscode.StatusBarItem);
+        vi.spyOn(vscode.window, 'createWebviewPanel').mockImplementation(() => ({
+            reveal: vi.fn(),
+            onDidDispose: vi.fn(() => ({ dispose() { } })),
+            dispose: vi.fn(),
+            webview: {
+                cspSource: 'vscode-webview:',
+                get html() { return webviewHtml; },
+                set html(v: string) { webviewHtml = v; },
+                onDidReceiveMessage: vi.fn(() => ({ dispose() { } })),
+            },
+        }) as unknown as vscode.WebviewPanel);
+        const registered = new Map<string, (...args: unknown[]) => unknown>();
+        vi.spyOn(vscode.commands, 'registerCommand').mockImplementation((id: string, cb: (...args: unknown[]) => unknown) => {
+            registered.set(id, cb);
+            return { dispose() { } };
+        });
+        vi.spyOn(vscode.workspace, 'getConfiguration').mockImplementation(() => ({
+            get: <T>(key: string): T | undefined => ({ profile: 'work', region: 'us-west-2', usageResetDay: 1, usageResetHour: 0 } as Record<string, unknown>)[key] as T | undefined,
+            inspect: () => undefined,
+            update: async () => undefined,
+            has: () => false,
+        }) as unknown as vscode.WorkspaceConfiguration);
+        vi.spyOn(vscode.workspace, 'onDidChangeConfiguration').mockImplementation(() => ({ dispose() { } }));
+
+        const subscriptions: Array<{ dispose(): unknown }> = [];
+        const context = {
+            subscriptions,
+            globalStorageUri: { scheme: 'vscode-userdata', fsPath: join(root, 'globalStorage', extId) },
+            globalState: { get: <T>(_k: string, def?: T) => def, update: async () => undefined },
+        } as unknown as vscode.ExtensionContext;
+        const otherProfile = createSharedPriceBacking({ scheme: 'vscode-userdata', fsPath: join(root, 'profiles', 'abc', 'globalStorage', extId) }, () => { }, log)!;
+        try {
+            activate(context);
+            await registered.get('amazonBedrockProvider.showUsage')?.();
+            expect(webviewHtml).toContain('No price data');
+
+            await otherProfile.writeRegion('us-west-2', () => ({
+                region: 'us-west-2',
+                publicationDate: '2026-11-01T00:00:00Z',
+                source: 'test',
+                models: { 'Claude Opus 5.5': { geo: { inputPerM: 5, outputPerM: 25 }, global: { inputPerM: 5, outputPerM: 25 } } },
+            }));
+            // 1,000,000 uncached input tokens at $5 per million tokens = $5.0000.
+            await vi.waitFor(() => expect(webviewHtml).toContain('5.0000'));
+            expect(webviewHtml).not.toContain('No price data');
+        } finally {
+            otherProfile.dispose();
             for (const sub of subscriptions) {
                 sub.dispose();
             }

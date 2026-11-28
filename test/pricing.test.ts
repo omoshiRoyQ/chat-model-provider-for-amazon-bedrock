@@ -383,5 +383,12 @@ describe('Claude Haiku 5.5 long-context pricing', () => {
         const found = lookupPrice(table, {}, NO_CARDS, 'anthropic.claude-haiku-5-5', 'Claude Haiku 5.5', 'Global');
         expect(found?.price.longContext).toEqual({ inputPerM: 0.5, outputPerM: 2.5, cacheReadPerM: 0.05, cacheWritePerM: 0.625 });
     });
+
+    it('protects lookupPrice and readCustomPricing against Object.prototype keys', () => {
+        expect(lookupPrice(table, {}, NO_CARDS, 'constructor', 'toString', 'Geo')).toBeUndefined();
+        const custom = readCustomPricing(JSON.parse('{"__proto__":{"input":1,"output":2},"openai.gpt-6-astra":{"input":5,"output":20}}'));
+        expect(Object.getPrototypeOf(custom)).toBeNull();
+        expect(custom['openai.gpt-6-astra']).toEqual({ inputPerM: 5, outputPerM: 20 });
+    });
 });
 

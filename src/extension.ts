@@ -7,6 +7,7 @@ import { PriceStore } from './priceStore';
 import { AmazonBedrockProvider } from './provider';
 import { CONFIG_SECTION, readSettings } from './settings';
 import { SsoSignIn } from './signIn';
+import { createSharedModelCardBacking, createSharedPriceBacking } from './sharedStorage';
 import { effortLabel, SignInStatusBar, ThinkingStatusBar, TokenStatusBar } from './statusBar';
 import { THINKING_EFFORTS } from './thinking';
 import { ThinkingStore } from './thinkingStore';
@@ -34,10 +35,16 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(log);
 
     const sharedBacking = createSharedUsageBacking(context.globalStorageUri, () => refresh(), log);
+    // Prices and model cards live in the same Default Profile directory as usage; a download in any VS Code Profile refreshes the others.
+    const sharedPriceBacking = createSharedPriceBacking(context.globalStorageUri, () => refresh(), log);
+    const sharedCardBacking = createSharedModelCardBacking(context.globalStorageUri, () => {
+        provider.syncExternalModelCards();
+        refresh();
+    }, log);
     const usageStore = new UsageStore(context.globalState, sharedBacking);
-    const priceStore = new PriceStore(context.globalState);
+    const priceStore = new PriceStore(context.globalState, sharedPriceBacking);
     const thinkingStore = new ThinkingStore(context.globalState);
-    const modelCards = new ModelCardStore(context.globalState);
+    const modelCards = new ModelCardStore(context.globalState, sharedCardBacking);
     const tokenBar = new TokenStatusBar();
     const thinkingBar = new ThinkingStatusBar();
     const signInBar = new SignInStatusBar();
@@ -45,6 +52,14 @@ export function activate(context: vscode.ExtensionContext): void {
         refreshAfterSettingsChange();
     });
     context.subscriptions.push(usageStore, resetTimer, tokenBar, thinkingBar, signInBar);
+    for (const backing of [sharedPriceBacking, sharedCardBacking]) {
+        if (backing) {
+            context.subscriptions.push(backing);
+        }
+    }
+    const migratedPriceRegions = new Set<string>();
+    const warnMigration = (what: string) => (error: unknown) => log.warn(`Could not migrate saved ${what} to shared storage: ${error instanceof Error ? error.message : String(error)}`);
+    void modelCards.migrateLegacy().then(() => refresh()).catch(warnMigration('model cards'));
 
     const provider = new AmazonBedrockProvider(log, signInBar, new SsoSignIn(log), {
         thinkingEffort: (modelId) => thinkingStore.get(modelId),
@@ -129,6 +144,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
     function refresh(now = new Date()): ReturnType<typeof currentView> {
         const s = readSettings();
+        const region = provider.region;
+        if (region && !migratedPriceRegions.has(region)) {
+            // Once per region and session: move a table saved by an older version into shared storage.
+            migratedPriceRegions.add(region);
+            void priceStore.migrateLegacy(region).then(() => refresh()).catch(warnMigration('prices'));
+        }
         const view = currentView(now);
         tokenBar.update(view.totalInput, view.totalOutput, view.rows.some((r) => r.cost !== undefined) ? view.totalCost : undefined);
         panel.refresh(view);

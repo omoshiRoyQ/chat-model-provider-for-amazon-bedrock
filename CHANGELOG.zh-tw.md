@@ -2,6 +2,11 @@
 
 [EN](CHANGELOG.md) | [JA](CHANGELOG.ja.md)
 
+## 2.1.1（2026-11-28）
+
+- 下載的區域價格表與 AWS 模型卡快取現在與使用量統計一併儲存在 Default Profile 的共用擴充功能儲存區，共用同一本機路徑的 VS Code Profile 只需按一次 **更新價格** 即可共用並即時更新已開啟的使用量面板。當共用儲存區或寫入鎖無法使用時，下載會直接回報錯誤，不再回退儲存到各 Profile。
+- 先前已儲存在 VS Code `globalState` 的價格表與模型卡快取會一次性遷移至共用儲存區，且不會覆蓋共用區較新的資料。
+
 ## 2.1.0（2026-11-23）
 
 - 新增明確的 `amazonBedrockProvider.proxyUrl` 設定，可供 Bedrock 及 AWS 公開價格表／模型卡下載使用。擴充功能不再讀取一般 HTTP proxy 環境變數或已設定的 Bedrock 自訂端點，並會持續驗證 proxy 與目的端的 TLS 憑證。

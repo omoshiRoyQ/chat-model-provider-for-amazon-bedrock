@@ -3,7 +3,6 @@ dist/
 *.vsix
 package-lock.json
 yarn.lock
-.vscode/settings.json
-.inu/
+.vscode/
 .q-work/
 .tmp/

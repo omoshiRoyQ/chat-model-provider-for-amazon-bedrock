@@ -178,11 +178,16 @@ export function lookupPrice(
     name: string,
     route: 'Geo' | 'Global' | 'In-Region',
 ): { price: ModelPrice; source: PriceSource } | undefined {
-    const own = custom[baseId];
+    const own = Object.hasOwn(custom, baseId) ? custom[baseId] : undefined;
     if (own) {
         return { price: own, source: 'custom' };
     }
-    const entry = table?.models[name] ?? table?.models[name.replace(/^Anthropic /, '')];
+    const altName = name.replace(/^Anthropic /, '');
+    const entry = table?.models && Object.hasOwn(table.models, name)
+        ? table.models[name]
+        : table?.models && Object.hasOwn(table.models, altName)
+            ? table.models[altName]
+            : undefined;
     if (entry) {
         return { price: route === 'Global' ? entry.global : entry.geo, source: 'table' };
     }

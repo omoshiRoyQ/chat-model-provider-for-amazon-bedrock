@@ -2,7 +2,7 @@
   "name": "chat-model-provider-for-amazon-bedrock",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "publisher": "omoshiRoyQ",
   "icon": "icon.png",
   "license": "MIT",
@@ -278,7 +278,6 @@
   "scripts": {
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "compile": "pnpm run typecheck && node esbuild.mjs",
-    "dev": "pnpm run compile && node scripts/dev-host.mjs",
     "watch": "node esbuild.mjs --watch",
     "test": "vitest run",
     "check:licenses": "node scripts/check-licenses.mjs",
@@ -287,7 +286,7 @@
     "check-model-cards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-model-cards.mts",
     "probe-models": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/probe-models.mts",
     "vscode:prepublish": "pnpm run typecheck && pnpm run check && node esbuild.mjs --production",
-    "package": "vsce package --no-dependencies",
+    "package": "node -e \"require('node:fs').mkdirSync('.tmp', { recursive: true })\" && vsce package --no-dependencies --out .tmp",
     "package:verified": "pnpm run test && pnpm run package && pnpm run package:ls",
     "package:ls": "vsce ls --no-dependencies",
     "verify": "pnpm run compile && pnpm test && pnpm run check && pnpm run package:ls"

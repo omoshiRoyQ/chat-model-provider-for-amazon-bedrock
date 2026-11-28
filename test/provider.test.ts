@@ -572,6 +572,16 @@ describe('AmazonBedrockProvider model visibility', () => {
         await list();
         expect(mocks.fetchModelSources).toHaveBeenCalledOnce();
     });
+    it('syncExternalModelCards fires only when a visible model card limit changes', async () => {
+        choose(['nvidia']);
+        await list();
+        notify.mockClear();
+        provider.syncExternalModelCards();
+        expect(notify).not.toHaveBeenCalled();
+        cards.limits.mockReturnValue(new Map([['nvidia.nemotron-nano-12b-v2', { card: 'updated', contextWindow: 128_000, maxOutputTokens: 4_096 }]]));
+        provider.syncExternalModelCards();
+        expect(notify).toHaveBeenCalledOnce();
+    });
     it('does not let an old card refresh invalidate a newly hidden list', async () => {
         let finish!: (value: { fetched: number; failed: string[] }) => void;
         cards.needsRefresh.mockReturnValue(true);

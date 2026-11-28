@@ -1,5 +1,5 @@
 // Localization check for VS Code extensions (EN source + zh-tw + ja), run before packaging.
-// Canonical copy lives in the user-level `project-vscode-extension` skill; keep repo copies identical.
+// Shared check script copied from a project template; keep copies identical across repos.
 // Errors fail the run; warnings list calls whose message cannot be checked statically.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -35,7 +35,7 @@ export function scanSource(text) {
     const aliasNames = [...new Set([...text.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:vscode\s*\.\s*)?l10n\s*\.\s*t\s*[;\n]/g)].map((m) => m[1]))];
     const aliasDeclarations = new Set([...text.matchAll(/\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:vscode\s*\.\s*)?(l10n\s*\.\s*t)\s*[;\n]/g)].map((m) => m.index + m[0].indexOf(m[1])));
     const aliasPattern = aliasNames.length ? `|(?:${aliasNames.map((n) => n.replace(/\$/g, '\\$')).join('|')})\\b(?=\\s*\\()` : '';
-    const callee = new RegExp(`^(?:l10n\\s*\\.\\s*t\\b${aliasPattern})(\\s*\\()?`);
+    const callee = new RegExp(`(?:l10n\\s*\\.\\s*t\\b${aliasPattern})(\\s*\\()?`, 'y');
 
     // Scans from i; when inExpr is true, stops after the '}' that closes a template `${`. Returns the next index.
     const scan = (i, inExpr) => {
@@ -61,7 +61,8 @@ export function scanSource(text) {
                 i = readString(i);
                 continue;
             }
-            const ref = callee.exec(text.slice(i, i + 80));
+            callee.lastIndex = i;
+            const ref = callee.exec(text);
             // `vscode.l10n.t` may follow a dot; an alias such as `t(` must not (`obj.t(` is another function).
             if (ref && !(ref[0].startsWith('l10n') ? /[\w$]/ : /[\w$.]/).test(text[i - 1] ?? '')) {
                 if (ref[1]) calls.push(i + ref[0].length - 1);
@@ -137,24 +138,30 @@ function readJson(path, errors) {
         errors.push(`${path}: file is missing`);
         return {};
     }
+    let catalog;
     try {
-        return JSON.parse(readFileSync(path, 'utf8'));
+        catalog = JSON.parse(readFileSync(path, 'utf8'));
     } catch (e) {
         errors.push(`${path}: invalid JSON (${e.message})`);
         return {};
     }
+    if (catalog === null || typeof catalog !== 'object' || Array.isArray(catalog)) {
+        errors.push(`${path}: expected a JSON object`);
+        return {};
+    }
+    return catalog;
 }
 
 function compareKeys(baseName, base, otherName, other, errors) {
     for (const key of Object.keys(base)) {
-        if (!(key in other)) errors.push(`${otherName}: missing key "${key}"`);
+        if (!Object.hasOwn(other, key)) errors.push(`${otherName}: missing key "${key}"`);
         else if (typeof other[key] !== 'string' || other[key].trim() === '') errors.push(`${otherName}: empty value for "${key}"`);
         else if (typeof base[key] === 'string' && placeholders(base[key]) !== placeholders(other[key])) {
             errors.push(`${otherName}: placeholders differ for "${key}" (${placeholders(base[key]) || 'none'} vs ${placeholders(other[key]) || 'none'})`);
         }
     }
     for (const key of Object.keys(other)) {
-        if (!(key in base)) errors.push(`${otherName}: key "${key}" is not in ${baseName}`);
+        if (!Object.hasOwn(base, key)) errors.push(`${otherName}: key "${key}" is not in ${baseName}`);
     }
 }
 
@@ -170,7 +177,7 @@ export function checkL10n(rootDir) {
     for (const [key, value] of Object.entries(nls)) {
         if (typeof value !== 'string' || value.trim() === '') errors.push(`package.nls.json: empty or non-string value for "${key}"`);
     }
-    for (const key of used) if (!(key in nls)) errors.push(`package.nls.json: missing key "${key}" used in package.json`);
+    for (const key of used) if (!Object.hasOwn(nls, key)) errors.push(`package.nls.json: missing key "${key}" used in package.json`);
     for (const key of Object.keys(nls)) if (!used.has(key)) errors.push(`package.nls.json: key "${key}" is not used in package.json`);
     for (const locale of LOCALES) {
         compareKeys('package.nls.json', nls, `package.nls.${locale}.json`, readJson(join(rootDir, `package.nls.${locale}.json`), errors), errors);
@@ -196,7 +203,7 @@ export function checkL10n(rootDir) {
         const name = `l10n/bundle.l10n.${locale}.json`;
         const bundle = readJson(join(rootDir, name), errors);
         for (const [message, where] of messages) {
-            if (!(message in bundle)) errors.push(`${name}: missing "${message}" (${where})`);
+            if (!Object.hasOwn(bundle, message)) errors.push(`${name}: missing "${message}" (${where})`);
         }
         for (const [key, value] of Object.entries(bundle)) {
             if (typeof value !== 'string' || value.trim() === '') errors.push(`${name}: empty value for "${key}"`);

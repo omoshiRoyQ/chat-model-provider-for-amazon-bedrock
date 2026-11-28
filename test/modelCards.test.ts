@@ -1,8 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { ModelCardStore } from '../src/modelCardStore';
 import { converseCacheModelIds, MODEL_CARD_INDEX_URL, modelCardNames, modelCardUrl, parseCardPricing, parseModelCard, parseTokenCount } from '../src/modelCards';
 import * as proxy from '../src/proxy';
+import { FileSharedModelCardBacking, MODEL_CARD_MIGRATION_MARKER_KEY } from '../src/sharedStorage';
 
 /**
  * Fixtures are excerpts of the markdown versions of AWS model cards and the user-guide index, fetched on 2026-10-01
@@ -420,6 +423,19 @@ describe('ModelCardStore', () => {
             },
         } as unknown as vscode.Memento;
     };
+    const dirs: string[] = [];
+    const backings: FileSharedModelCardBacking[] = [];
+    const storageDir = () => {
+        mkdirSync('.tmp', { recursive: true });
+        const dir = mkdtempSync(resolve('.tmp', 'bedrock-cards-'));
+        dirs.push(dir);
+        return dir;
+    };
+    const backing = (dir = storageDir()) => {
+        const created = new FileSharedModelCardBacking(dir);
+        backings.push(created);
+        return created;
+    };
     const pages: Record<string, string> = {
         [MODEL_CARD_INDEX_URL]: INDEX,
         [modelCardUrl('model-card-anthropic-claude-haiku-4-5')]: HAIKU_45,
@@ -438,11 +454,13 @@ describe('ModelCardStore', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        for (const created of backings.splice(0)) created.dispose();
+        for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
 
     it('fetches the index and cards, then answers from the cache', async () => {
         const fetchMock = stubFetch();
-        const store = new ModelCardStore(memento());
+        const store = new ModelCardStore(memento(), backing());
         expect(store.limits().size).toBe(0);
         expect(store.needsRefresh([LLAMA], 0)).toBe(true);
 
@@ -459,7 +477,7 @@ describe('ModelCardStore', () => {
 
     it('a failed page is retried on the next model-list load', async () => {
         stubFetch([modelCardUrl('model-card-meta-llama-3-3-70b-instruct')]);
-        const store = new ModelCardStore(memento());
+        const store = new ModelCardStore(memento(), backing());
         const result = await store.refresh([LLAMA], 1_000);
         expect(result.failed).toEqual(['model-card-meta-llama-3-3-70b-instruct']);
         expect(store.limits().has(LLAMA)).toBe(false);
@@ -468,12 +486,12 @@ describe('ModelCardStore', () => {
 
     it('throws when the index cannot be read', async () => {
         stubFetch([MODEL_CARD_INDEX_URL]);
-        await expect(new ModelCardStore(memento()).refresh([LLAMA], 1_000)).rejects.toThrow('HTTP 404');
+        await expect(new ModelCardStore(memento(), backing()).refresh([LLAMA], 1_000)).rejects.toThrow('HTTP 404');
     });
 
     // User decision (2026-10-04): a page that fails keeps its last good copy; a card removed from the index is dropped.
     it('keeps the previous copy of a page that fails, but drops cards no longer in the index', async () => {
-        const cards = new ModelCardStore(memento());
+        const cards = new ModelCardStore(memento(), backing());
         stubFetch();
         await cards.refresh([LLAMA], 1_000);
 
@@ -495,7 +513,7 @@ describe('ModelCardStore', () => {
     it('ignores a cache written before pricing was parsed, and force downloads every card again', async () => {
         const store = memento();
         await store.update('modelCardCache', { checkedAt: 1_000, searched: [LLAMA], cards: { x: { card: 'x', runtimeIds: [LLAMA], textOutput: true } } });
-        const cards = new ModelCardStore(store);
+        const cards = new ModelCardStore(store, backing());
         expect(cards.limits().size).toBe(0);
         expect(cards.needsRefresh([LLAMA], 2_000)).toBe(true);
 
@@ -506,5 +524,67 @@ describe('ModelCardStore', () => {
         expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(fetchMock).toHaveBeenCalledWith(MODEL_CARD_INDEX_URL, { timeoutMs: 15_000, maxBytes: 8 * 1024 * 1024, proxyUrl: 'http://proxy.example:8080' });
         expect(cards.needsRefresh([LLAMA], 4_000)).toBe(false);
+    });
+
+    // User decision (2026-11-28): the cache lives in Default Profile shared storage, so a second Profile reuses the first Profile's download.
+    it('shares one download between Profiles on the same directory and writes nothing to the Profile storage', async () => {
+        const dir = storageDir();
+        const fetchMock = stubFetch();
+        const profileA = new Map<string, unknown>();
+        const profileMemento = { get: (key: string) => profileA.get(key), update: async (key: string, value: unknown) => { profileA.set(key, value); } } as unknown as vscode.Memento;
+        await new ModelCardStore(profileMemento, backing(dir)).refresh([LLAMA], 1_000);
+        expect(profileA.size).toBe(0);
+
+        fetchMock.mockClear();
+        const profileB = new ModelCardStore(memento(), backing(dir));
+        expect(profileB.limits().get(LLAMA)).toMatchObject({ contextWindow: 128_000, maxOutputTokens: 4_000 });
+        expect(profileB.needsRefresh([LLAMA], 2_000)).toBe(false);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects before any request without shared storage, and shows no cards', async () => {
+        const fetchMock = stubFetch();
+        const store = new ModelCardStore(memento());
+        await expect(store.refresh([LLAMA], 1_000)).rejects.toThrow('Shared model card storage is unavailable');
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(store.limits().size).toBe(0);
+        expect(store.needsRefresh([LLAMA], 2_000)).toBe(true);
+    });
+
+    // The version 2 shape is the cache format used before shared storage existed (modelCardStore.ts of 2.1.0).
+    const legacyCache = { version: 2, checkedAt: 1_000, searched: [LLAMA], cards: { x: { card: 'x', runtimeIds: [LLAMA], textOutput: true, contextWindow: 64_000 } } };
+
+    it('uses an old Profile cache before migration, then moves it to shared storage once', async () => {
+        const dir = storageDir();
+        const data = new Map<string, unknown>([['modelCardCache', legacyCache]]);
+        const oldMemento = { get: (key: string) => data.get(key), update: async (key: string, value: unknown) => { data.set(key, value); } } as unknown as vscode.Memento;
+        const store = new ModelCardStore(oldMemento, backing(dir));
+        expect(store.limits().get(LLAMA)).toMatchObject({ contextWindow: 64_000 });
+
+        await store.migrateLegacy();
+        expect(data.get(MODEL_CARD_MIGRATION_MARKER_KEY)).toBe(true);
+        expect(new ModelCardStore(memento(), backing(dir)).limits().get(LLAMA)).toMatchObject({ contextWindow: 64_000 });
+    });
+
+    it('keeps a cache another Profile already saved and only marks the old Profile as migrated', async () => {
+        const dir = storageDir();
+        const shared = backing(dir);
+        const newer = { version: 2, checkedAt: 5_000, searched: [], cards: { y: { card: 'y', runtimeIds: [LLAMA], textOutput: true, contextWindow: 128_000 } } };
+        await shared.writeCache(() => newer);
+        const data = new Map<string, unknown>([['modelCardCache', legacyCache]]);
+        const memento = { get: (key: string) => data.get(key), update: async (key: string, value: unknown) => { data.set(key, value); } } as unknown as vscode.Memento;
+        const store = new ModelCardStore(memento, shared);
+
+        await store.migrateLegacy();
+        expect(store.limits().get(LLAMA)).toMatchObject({ contextWindow: 128_000 });
+        expect(data.get(MODEL_CARD_MIGRATION_MARKER_KEY)).toBe(true);
+    });
+
+    it('does not mark anything migrated when shared storage is unavailable', async () => {
+        const data = new Map<string, unknown>([['modelCardCache', legacyCache]]);
+        const update = vi.fn();
+        const memento = { get: (key: string) => data.get(key), update } as unknown as vscode.Memento;
+        await new ModelCardStore(memento).migrateLegacy();
+        expect(update).not.toHaveBeenCalled();
     });
 });
